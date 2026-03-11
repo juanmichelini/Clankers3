@@ -1,0 +1,9 @@
+anthropic
+google-genai
+openai
+numpy
+scipy
+pydub
+requests
+python-dotenv
+dawdreamer; platform_system=="Windows"

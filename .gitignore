@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# Audio output (generated — don't commit renders)
+output/*.wav
+output/*.mp3
+output/logs/
+
+# Samples (large binary files)
+samples/
+
+# Secrets / local config overrides
+.env
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
