@@ -1,14 +1,20 @@
 """
-The Clankers 3 — Harmony Agent
+The Clankers 3 -- Harmony Agent
 Buchla Systems (arpeggios/stabs) + HybridSynth (Clouds granular pads).
 
 run() now returns {"buchla": AudioSegment, "hybrid": AudioSegment}
 instead of a single blended segment.
 
 Music Sheet key: agents.harmony
-  synth.buchla  — arp parameters (attack, release, waveshape, fm_depth, fm_index, filter_cutoff)
-  synth.hybrid  — pad parameters (attack, release, detune, reverb, chorus)
-  synth.hybrid.cloud — Clouds-style granular (position, size, density, texture, spread, mix, freeze)
+  synth.buchla  -- arp parameters (attack_s, decay_s, sustain, release_s, waveshape, fm_depth, fm_index, filter_cutoff)
+  synth.hybrid  -- pad parameters (attack_s, decay_s, sustain, release_s, detune, reverb, chorus)
+  synth.hybrid.cloud -- Clouds-style granular (position, size, density, texture, spread, mix, freeze)
+
+Envelope shape (full ADSR):
+  attack_s  -- ramp from 0 to peak
+  decay_s   -- ramp from peak down to sustain level  (0 = skip decay stage)
+  sustain   -- 0.0-1.0 level held until note end  (1.0 = no decay, full sustain)
+  release_s -- ramp from sustain level to 0 at note end
 """
 
 import os
@@ -59,16 +65,40 @@ def generate_progression(sheet: dict, api_key: str | None = None) -> dict:
     Ask Claude to generate a chord progression + arpeggio pattern.
     Returns dict with 'chords' and 'arpeggio' keys.
     """
-    harmony      = sheet["agents"]["harmony"]
-    bpm          = sheet.get("bpm", 120)
-    bars         = sheet.get("bars", 8)
-    key          = sheet.get("key", "C minor")
-    time_sig     = sheet.get("timeSignature", "4/4")
-    mood         = sheet.get("mood", "")
-    structure    = sheet.get("structure", "")
-    global_notes = sheet.get("globalNotes", "")
-    texture      = harmony.get("texture", "")
-    instruction  = harmony.get("instruction", "")
+    harmony          = sheet["agents"]["harmony"]
+    bpm              = sheet.get("bpm", 120)
+    bars             = sheet.get("bars", 8)
+    key              = sheet.get("key", "C minor")
+    time_sig         = sheet.get("timeSignature", "4/4")
+    mood             = sheet.get("mood", "")
+    structure        = sheet.get("structure", "")
+    global_notes     = sheet.get("globalNotes", "")
+    tension          = float(sheet.get("tension", 0.4))
+    harmonic_rhythm  = sheet.get("harmonic_rhythm", "medium")
+    texture          = harmony.get("texture", "")
+    instruction      = harmony.get("instruction", "")
+
+    # Translate harmonic_rhythm + tension into concrete bar-duration guidance
+    if harmonic_rhythm == "fast" or tension >= 0.7:
+        chord_dur_hint = (
+            "Fast harmonic rhythm: change chords every 1 bar. "
+            "More chords = more harmonic movement = more tension."
+        )
+    elif harmonic_rhythm == "slow" or tension <= 0.25:
+        chord_dur_hint = (
+            "Slow harmonic rhythm: each chord lasts 4 bars. "
+            "Fewer changes = more space and stillness."
+        )
+    elif harmonic_rhythm == "mixed":
+        chord_dur_hint = (
+            "Mixed harmonic rhythm: vary chord durations (1, 2, and 4 bars). "
+            "Irregular changes create unpredictability and interest."
+        )
+    else:
+        chord_dur_hint = (
+            "Medium harmonic rhythm: change chords every 2 bars. "
+            "Balanced -- enough movement without restlessness."
+        )
 
     prompt = f"""You are a harmony synthesizer for an AI electronic music band.
 Generate a chord progression and arpeggio pattern.
@@ -79,9 +109,13 @@ Bars: {bars}
 Time signature: {time_sig}
 Section: {structure}
 Mood: {mood}
+Tension: {tension:.2f} (0=minimal, 1=peak)
+Harmonic rhythm: {harmonic_rhythm}
 Global notes: {global_notes}
 Texture: {texture}
 Instruction: {instruction}
+
+{chord_dur_hint}
 
 Return a JSON object with:
 - "chords": array of chord objects, each with:
@@ -92,13 +126,19 @@ Return a JSON object with:
     - "active": boolean
     - "pattern": array of indices into chord's midi_notes (e.g. [0,1,2,3,2,1])
     - "speed": "quarter", "8th", or "16th"
-- "pad_cutoff": LP filter cutoff in Hz (200-2000) — lower = darker/warmer
+- "pad_cutoff": LP filter cutoff in Hz (200-2000) -- lower = darker/warmer
+
+VOICE LEADING RULES for MIDI notes:
+- Each chord's lowest MIDI note (root/bass) should move by step (≤2 semitones) or common tone
+  from the previous chord's lowest note where musically possible -- avoid arbitrary large jumps
+- Shared notes between chords: keep them on the same MIDI pitch (common-tone retention)
+- The bass register (notes 55-67) should resolve down by step or hold when tension resolves
 
 Rules:
 - Chord bars must sum exactly to {bars}
 - MIDI notes should be in the 55-84 range (bass-mid register for pads)
 - Let the genre, mood, and section shape chord choices
-- If texture mentions specific chords (e.g. "Dm7 → Fmaj7"), use those
+- If texture mentions specific chords (e.g. "Dm7 -> Fmaj7"), use those
 - Section matters: bridge = harmonic contrast, outro = resolution, climax = tension
 - Match the mood: dark/dissociative = lower cutoff, lush/warm = higher
 
@@ -132,7 +172,7 @@ Return ONLY valid JSON. No explanation."""
 
 
 def _fallback_progression(sheet: dict) -> dict:
-    """Minor iv → VI fallback in the sheet's key."""
+    """Minor iv -> VI fallback in the sheet's key."""
     return {
         "chords": [
             {"name": "i",    "midi_notes": [60, 63, 67, 70], "bars": sheet.get("bars", 8) // 2},
@@ -151,11 +191,14 @@ def _sawtooth(freq: float, n: int) -> np.ndarray:
 
 
 def synth_pad_chord(midi_notes: list[int], duration_s: float, cutoff_hz: float,
-                    attack_s: float = 0.5, release_s: float = 0.4,
+                    attack_s: float = 0.5, decay_s: float = 0.0,
+                    sustain: float = 1.0, release_s: float = 0.4,
                     detune_cents: int = 4) -> np.ndarray:
     """
     Synthesize a chord pad: layered detuned sawtooth oscillators per note,
-    slow attack, long sustain. Low-pass filtered for warmth.
+    full ADSR envelope. Low-pass filtered for warmth.
+    decay_s=0 / sustain=1.0 = classic long pad (holds at full level).
+    decay_s>0 / sustain<1.0 = evolving pad that blooms then settles.
     """
     n   = max(1, int(SAMPLE_RATE * duration_s))
     out = np.zeros(n, dtype=np.float32)
@@ -168,18 +211,24 @@ def synth_pad_chord(midi_notes: list[int], duration_s: float, cutoff_hz: float,
             osc = _sawtooth(f, n) * 0.25
             out += osc
 
-    attack_s  = min(float(attack_s), duration_s * 0.8)
-    release_s = min(float(release_s), duration_s * 0.5)
-    attack_n  = int(attack_s * SAMPLE_RATE)
-    release_n = int(release_s * SAMPLE_RATE)
+    # -- Full ADSR envelope --
+    sus     = float(np.clip(sustain, 0.0, 1.0))
+    att_n   = min(int(attack_s * SAMPLE_RATE), n)
+    dec_n   = min(int(decay_s  * SAMPLE_RATE), n - att_n)
+    rel_n   = min(int(release_s * SAMPLE_RATE), n)
 
-    env = np.ones(n)
-    if attack_n > 0:
-        env[:attack_n] = np.linspace(0, 1, attack_n)
-    if release_n > 0 and release_n < n:
-        env[n - release_n:] = np.linspace(1, 0, release_n)
+    env = np.full(n, sus, dtype=np.float64)
+    # Attack: 0 -> 1
+    if att_n > 0:
+        env[:att_n] = np.linspace(0.0, 1.0, att_n)
+    # Decay: 1 -> sustain level
+    if dec_n > 0:
+        env[att_n:att_n + dec_n] = np.linspace(1.0, sus, dec_n)
+    # Release: sustain -> 0 at end of note
+    if rel_n > 0 and rel_n < n:
+        env[n - rel_n:] = np.linspace(sus, 0.0, rel_n)
 
-    out *= env
+    out *= env.astype(np.float32)
 
     if HAS_SCIPY:
         out = _lowpass(out, cutoff_hz, SAMPLE_RATE)
@@ -190,10 +239,12 @@ def synth_pad_chord(midi_notes: list[int], duration_s: float, cutoff_hz: float,
 # ─── ARP SYNTHESIS (BUCHLA) ───────────────────────────────────────────────────
 
 def synth_arp_note(midi: int, duration_s: float,
-                   attack_s: float = 0.008, release_s: float | None = None,
+                   attack_s: float = 0.008, decay_s: float = 0.0,
+                   sustain: float = 1.0, release_s: float | None = None,
                    waveshape: float = 0.0) -> np.ndarray:
-    """Single arpeggio note — triangle/complex wave, parametric ADSR.
+    """Single arpeggio note -- triangle/complex wave, full ADSR envelope.
     waveshape: 0.0=pure triangle (Buchla-style mellow), 1.0=folded waveshaper (complex).
+    decay_s=0 and sustain=1.0 reproduce the old flat-sustain behaviour.
     """
     n    = max(1, int(SAMPLE_RATE * duration_s))
     freq = midi_to_hz(midi)
@@ -207,29 +258,41 @@ def synth_arp_note(midi: int, duration_s: float,
     else:
         wave = tri
 
-    rel_s    = release_s if release_s is not None else duration_s * 0.6
-    att_n    = min(int(attack_s * SAMPLE_RATE), n)
-    rel_n    = min(int(rel_s * SAMPLE_RATE), n)
-    env      = np.ones(n)
-    env[:att_n] *= np.linspace(0, 1, att_n)
+    # -- Full ADSR envelope --
+    rel_s   = release_s if release_s is not None else duration_s * 0.6
+    att_n   = min(int(attack_s  * SAMPLE_RATE), n)
+    dec_n   = min(int(decay_s   * SAMPLE_RATE), n - att_n)
+    rel_n   = min(int(rel_s     * SAMPLE_RATE), n)
+    sus     = float(np.clip(sustain, 0.0, 1.0))
+
+    env = np.full(n, sus, dtype=np.float64)
+    # Attack: 0 -> 1
+    if att_n > 0:
+        env[:att_n] = np.linspace(0.0, 1.0, att_n)
+    # Decay: 1 -> sustain level
+    if dec_n > 0:
+        env[att_n:att_n + dec_n] = np.linspace(1.0, sus, dec_n)
+    # Release: sustain -> 0 at end of note
     if rel_n > 0 and rel_n < n:
-        env[n - rel_n:] = np.linspace(1, 0, rel_n)
+        env[n - rel_n:] = np.linspace(sus, 0.0, rel_n)
 
     return (wave * env * 0.5).astype(np.float32)
 
 
 def synth_stab_chord(midi_notes: list[int], duration_s: float,
-                     attack_s: float = 0.005, release_s: float = 0.15,
+                     attack_s: float = 0.005, decay_s: float = 0.0,
+                     sustain: float = 1.0, release_s: float = 0.15,
                      waveshape: float = 0.0) -> np.ndarray:
     """
     Short chord stab for Buchla when arp is inactive.
-    Layered arp notes played simultaneously — brief pluck/stab character.
+    Layered arp notes played simultaneously -- brief pluck/stab character.
     """
     n   = max(1, int(SAMPLE_RATE * duration_s))
     out = np.zeros(n, dtype=np.float32)
     for midi in midi_notes:
         note = synth_arp_note(midi, duration_s,
-                              attack_s=attack_s, release_s=release_s,
+                              attack_s=attack_s, decay_s=decay_s,
+                              sustain=sustain, release_s=release_s,
                               waveshape=waveshape)
         if len(note) < n:
             note = np.pad(note, (0, n - len(note)))
@@ -251,15 +314,15 @@ def _granulate(
     freeze:   bool  = False,
 ) -> np.ndarray:
     """
-    Clouds-style granular processor (mono float32 in → float32 out).
+    Clouds-style granular processor (mono float32 in -> float32 out).
 
     position  0-1   read head start position in the signal buffer
-    size      0-1   grain duration: maps 20ms – 500ms
-    density   0-1   grains/sec: maps 2 – 60
+    size      0-1   grain duration: maps 20ms - 500ms
+    density   0-1   grains/sec: maps 2 - 60
     texture   0-1   window shape: 0=Hann (smooth), 1=rectangular (harsh)
     spread    0-1   position scatter: randomises each grain's source position
     mix       0-1   wet/dry blend (0=dry, 1=full granular)
-    freeze    bool  True → all grains read from the same fixed position
+    freeze    bool  True -> all grains read from the same fixed position
     """
     n = len(signal)
     if n < 64 or mix < 0.005:
@@ -270,7 +333,7 @@ def _granulate(
     step_n    = max(1, int(sr / rate_hz))
     scatter_n = int(spread * grain_n)     # scatter radius in samples
 
-    # Window: Hann (texture=0) → rectangular (texture=1)
+    # Window: Hann (texture=0) -> rectangular (texture=1)
     hann      = np.hanning(grain_n).astype(np.float32)
     window    = hann * (1.0 - float(texture)) + float(texture)
 
@@ -286,9 +349,9 @@ def _granulate(
             src = freeze_src
         else:
             # Sequential playback biased by position:
-            #   position=0.5 → reads from current onset (normal)
-            #   position<0.5 → reads behind (stretched/echoing)
-            #   position>0.5 → reads ahead (compressed/rushing)
+            #   position=0.5 -> reads from current onset (normal)
+            #   position<0.5 -> reads behind (stretched/echoing)
+            #   position>0.5 -> reads ahead (compressed/rushing)
             src = int(np.clip(onset + bias, 0, n - grain_n))
 
         if scatter_n > 0:
@@ -379,7 +442,7 @@ def render_buchla(
 ) -> AudioSegment:
     """
     Render Buchla Systems arpeggios (or stabs when arp is off).
-    Returns a single AudioSegment — Buchla track only, no pads.
+    Returns a single AudioSegment -- Buchla track only, no pads.
     """
     sp       = synth_params or {}
     buchla_p = sp.get("buchla", {})
@@ -404,7 +467,9 @@ def render_buchla(
     raw_bcut    = buchla_p.get("filter_cutoff")
     arp_cutoff  = (200.0 + float(raw_bcut) * 3300.0) if raw_bcut is not None else None
     arp_attack  = float(buchla_p.get("attack_s",  0.008))
-    arp_release = float(buchla_p.get("release_s", 0.3)) if "release_s" in buchla_p else None
+    arp_decay   = float(buchla_p.get("decay_s",   0.0))
+    arp_sustain = float(buchla_p.get("sustain",    1.0))
+    arp_release = float(buchla_p.get("release_s",  0.3)) if "release_s" in buchla_p else None
     arp_wave    = float(buchla_p.get("waveshape",  0.0))
 
     cursor_ms = 0.0
@@ -429,6 +494,8 @@ def render_buchla(
 
                 arp_raw = synth_arp_note(midi, arp_note_dur_s,
                                          attack_s=arp_attack,
+                                         decay_s=arp_decay,
+                                         sustain=arp_sustain,
                                          release_s=arp_release,
                                          waveshape=arp_wave)
                 if arp_cutoff is not None and HAS_SCIPY:
@@ -438,10 +505,12 @@ def render_buchla(
                 output  = output.overlay(arp_seg - 3, position=int(arp_cursor_ms))
                 arp_cursor_ms += arp_step_ms
         else:
-            # ── Buchla stabs (arp off → short chord hit per chord change) ───
-            stab_raw = synth_stab_chord(midi_notes, min(duration_s, 0.4),
+            # ── Buchla stabs (arp off -> short chord hit per chord change) ───
+            stab_raw = synth_stab_chord(midi_notes, duration_s,
                                          attack_s=arp_attack,
-                                         release_s=min(arp_release or 0.2, 0.3),
+                                         decay_s=arp_decay,
+                                         sustain=arp_sustain,
+                                         release_s=arp_release or 0.2,
                                          waveshape=arp_wave)
             if arp_cutoff is not None and HAS_SCIPY:
                 stab_raw = _lowpass(stab_raw, arp_cutoff, SAMPLE_RATE)
@@ -461,8 +530,8 @@ def render_hybrid(
 ) -> AudioSegment:
     """
     Render HybridSynth pads with Clouds granular applied.
-    Signal chain: synth pads → chorus/reverb (optional) → granular
-    Returns a single AudioSegment — hybrid pad track only.
+    Signal chain: synth pads -> chorus/reverb (optional) -> granular
+    Returns a single AudioSegment -- hybrid pad track only.
     """
     sp       = synth_params or {}
     hybrid_p = sp.get("hybrid", {})
@@ -479,6 +548,8 @@ def render_hybrid(
     pad_cutoff  = (200.0 + float(raw_cutoff) * 3300.0) if raw_cutoff is not None \
                   else float(progression.get("pad_cutoff", 700))
     pad_attack  = float(hybrid_p.get("attack_s",    0.5))
+    pad_decay   = float(hybrid_p.get("decay_s",     0.0))
+    pad_sustain = float(hybrid_p.get("sustain",     1.0))
     pad_release = float(hybrid_p.get("release_s",   0.4))
     pad_detune  = int(hybrid_p.get("detune_cents",   4))
 
@@ -493,13 +564,14 @@ def render_hybrid(
         chord_ms   = chord_bars * bar_ms
 
         pad_raw = synth_pad_chord(midi_notes, duration_s, pad_cutoff,
-                                  attack_s=pad_attack, release_s=pad_release,
+                                  attack_s=pad_attack, decay_s=pad_decay,
+                                  sustain=pad_sustain, release_s=pad_release,
                                   detune_cents=pad_detune)
         pad_seg = _to_segment(pad_raw)
         output  = output.overlay(pad_seg - 6, position=int(cursor_ms))
         cursor_ms += chord_ms
 
-    # ── Effects: chorus / reverb (HybridSynth: Synth → Chorus → Delay → Reverb → Granular)
+    # ── Effects: chorus / reverb (HybridSynth: Synth -> Chorus -> Delay -> Reverb -> Granular)
     if "chorus" in hybrid_p:
         if hybrid_p["chorus"]:
             output = _chorus(output)
@@ -539,7 +611,7 @@ def _render_vst_mono(progression: dict, bpm: int, bars: int,
                      vst_params: dict | None = None) -> AudioSegment:
     """
     Core DawDreamer VST renderer.
-    arp_on: True → arpeggios (buchla mode), False → sustained pads (hybrid mode)
+    arp_on: True -> arpeggios (buchla mode), False -> sustained pads (hybrid mode)
     vst_params: dict of {param_name: value} to set before rendering.
     NOTE: Exact parameter names depend on VST; failures are silently skipped.
     """
@@ -550,7 +622,7 @@ def _render_vst_mono(progression: dict, bpm: int, bars: int,
     engine = daw.RenderEngine(SAMPLE_RATE, 512)
     synth  = engine.make_plugin_processor("inst", vst_path)
 
-    # Apply VST parameters (best-effort — silently skip unknown names)
+    # Apply VST parameters (best-effort -- silently skip unknown names)
     for param_name, value in (vst_params or {}).items():
         _set_vst_param(synth, param_name, value)
 
@@ -607,20 +679,42 @@ def _render_vst_mono(progression: dict, bpm: int, bars: int,
 def render_vst_buchla(progression: dict, bpm: int, bars: int,
                       vst_path: str, synth_params: dict | None = None) -> AudioSegment:
     """
-    Render Buchla Systems VST — arpeggios/stabs.
+    Render Buchla Systems VST -- arpeggios/stabs.
     Maps Music Sheet buchla synth params to likely VST parameter names.
-    Exact names depend on Buchla Systems.vst3 ParameterIDs.h — failures are silently skipped.
+    Exact names depend on Buchla Systems.vst3 ParameterIDs.h -- failures are silently skipped.
     """
-    sp       = (synth_params or {}).get("buchla", {})
-    waveshape = float(sp.get("waveshape",  0.0))
-    fm_depth  = float(sp.get("fm_depth",   0.0))
-    fm_index  = float(sp.get("fm_index",   0.0))
+    sp        = (synth_params or {}).get("buchla", {})
+    waveshape = float(sp.get("waveshape", 0.0))
+    fm_depth  = float(sp.get("fm_depth",  0.0))
+    fm_index  = float(sp.get("fm_index",  0.0))
+    attack_s  = float(sp.get("attack_s",  0.01))
+    decay_s   = float(sp.get("decay_s",   0.3))
+    sustain   = float(np.clip(sp.get("sustain", 1.0), 0.0, 1.0))
+    release_s = float(sp.get("release_s", 0.3))
 
-    # Best-effort VST parameter mapping (names likely exposed by JUCE APVTS)
+    # Buchla Systems APVTS param IDs (from ParameterIDs.h).
+    # env_1_mode: 0.0 = Transient, 0.5 = Sustained, 1.0 = Cycle (3-choice normalized).
+    # Force Transient so envelopes don't self-trigger on MIDI notes.
+    _ENV_TRANSIENT = 0.0
+
     vst_params = {
-        "Osc Wavefold Amount": waveshape,
-        "Osc FM Depth":        fm_depth,
-        "Osc FM Index":        fm_index / 20.0,   # normalize 0-20 → 0-1 if VST expects it
+        # Oscillator (Complex Oscillator + Waveshaper)
+        "osc_wavefold_amount":   waveshape,
+        "osc_mod_depth_fm":      fm_depth,
+        "osc_fm_index":          fm_index / 20.0,
+        # LPG1 cutoff/resonance (primary voice filter)
+        "lpg_1_cutoff":          float(sp.get("filter_cutoff", 0.65)),
+        "lpg_1_resonance":       float(sp.get("resonance", 0.25)),
+        # Envelope 1 (amp / LPG vactrol driver)
+        "env_1_attack":          attack_s,
+        "env_1_decay":           decay_s,
+        "env_1_sustain":         sustain,
+        "env_1_mode":            _ENV_TRANSIENT,
+        # Envelope 2 (modulation / filter sweep)
+        "env_2_attack":          attack_s,
+        "env_2_decay":           decay_s,
+        "env_2_sustain":         sustain,
+        "env_2_mode":            _ENV_TRANSIENT,
     }
 
     return _render_vst_mono(progression, bpm, bars, vst_path,
@@ -630,21 +724,45 @@ def render_vst_buchla(progression: dict, bpm: int, bars: int,
 def render_vst_hybrid(progression: dict, bpm: int, bars: int,
                       vst_path: str, synth_params: dict | None = None) -> AudioSegment:
     """
-    Render HybridSynth VST — sustained pads only (arp forced off).
+    Render HybridSynth VST -- sustained pads only (arp forced off).
     Applies Clouds granular params to the VST.
-    NOTE: VST parameter names are best-effort guesses — exact names TBD.
+    NOTE: VST parameter names are best-effort guesses -- exact names TBD.
     """
     sp      = (synth_params or {}).get("hybrid", {})
     cloud_p = sp.get("cloud", {})
 
+    # HybridSynth APVTS param IDs (from SynthAudioProcessor.cpp).
+    # All values normalized 0-1 unless noted.
     vst_params = {
-        "cloud_position": float(cloud_p.get("position", 0.5)),
-        "cloud_size":     float(cloud_p.get("size",     0.2)),
-        "cloud_density":  float(cloud_p.get("density",  0.4)),
-        "cloud_texture":  float(cloud_p.get("texture",  0.3)),
-        "cloud_spread":   float(cloud_p.get("spread",   0.2)),
-        "cloud_mix":      float(cloud_p.get("mix",      0.4)),
-        "cloud_freeze":   1.0 if cloud_p.get("freeze", False) else 0.0,
+        # Filter
+        "FILTER_CUTOFF":      float(sp.get("filter_cutoff", 0.5)),
+        "FILTER_RES":         float(sp.get("resonance", 0.1)),
+        # Amp envelope (ENV1)
+        "ENV1_ATTACK":        float(sp.get("attack_s",  0.5)),
+        "ENV1_DECAY":         float(sp.get("decay_s",   0.0)),
+        "ENV1_SUSTAIN":       float(sp.get("sustain",   1.0)),
+        "ENV1_RELEASE":       float(sp.get("release_s", 0.4)),
+        # Filter envelope (ENV2)
+        "ENV2_ATTACK":        float(sp.get("attack_s",  0.5)),
+        "ENV2_DECAY":         float(sp.get("decay_s",   0.0)),
+        "ENV2_SUSTAIN":       float(sp.get("sustain",   1.0)),
+        "ENV2_RELEASE":       float(sp.get("release_s", 0.4)),
+        "ENV2_AMOUNT":        float(sp.get("filter_env_amount", 0.0)),
+        # Chorus / Delay / Reverb
+        "CHORUS_RATE":        float(sp.get("chorus_rate",  0.3)),
+        "CHORUS_DEPTH":       float(sp.get("chorus_depth", 0.5)),
+        "CHORUS_MIX":         float(sp.get("chorus_mix",   0.4)) if sp.get("chorus") else 0.0,
+        "REVERB_SIZE":        float(sp.get("reverb", 0.5)),
+        "REVERB_DAMPING":     float(sp.get("reverb_damping", 0.5)),
+        "REVERB_MIX":         float(sp.get("reverb", 0.0)),
+        # Granular (was "cloud_*" -- correct IDs from SynthAudioProcessor.cpp)
+        "granular_position":  float(cloud_p.get("position", 0.5)),
+        "granular_size":      float(cloud_p.get("size",     0.2)),
+        "granular_density":   float(cloud_p.get("density",  0.4)),
+        "granular_texture":   float(cloud_p.get("texture",  0.3)),
+        "granular_spread":    float(cloud_p.get("spread",   0.2)),
+        "granular_mix":       float(cloud_p.get("mix",      0.0)),
+        "granular_freeze":    1.0 if cloud_p.get("freeze", False) else 0.0,
     }
 
     return _render_vst_mono(progression, bpm, bars, vst_path,
@@ -666,7 +784,7 @@ def run(
     Returns {"buchla": AudioSegment, "hybrid": AudioSegment}
     or None if harmony is inactive.
 
-    output_path: base path — buchla exported as <base>_buchla.wav,
+    output_path: base path -- buchla exported as <base>_buchla.wav,
                               hybrid exported as <base>_hybrid.wav.
     """
     harmony = sheet["agents"]["harmony"]
@@ -706,7 +824,7 @@ def run(
     progression = generate_progression(sheet, api_key=api_key)
     chords      = progression.get("chords", [])
     arp         = progression.get("arpeggio", {})
-    print(f"Chords     : {' → '.join(c.get('name','?') for c in chords)}")
+    print(f"Chords     : {' -> '.join(c.get('name','?') for c in chords)}")
     print(f"Arpeggio   : {'on (' + arp.get('speed','?') + ')' if arp.get('active') else 'off'}")
 
     # ── Render ──────────────────────────────────────────────────────────────────
@@ -727,7 +845,7 @@ def run(
         hybrid_audio = render_vst_hybrid(progression, bpm, bars, vst_path_pad, synth)
     else:
         if (vst_path or vst_path_pad) and not HAS_DAWDREAMER:
-            print("  [warn] dawdreamer not installed — numpy synthesis for both")
+            print("  [warn] dawdreamer not installed -- numpy synthesis for both")
         print(f"Renderer   : numpy (Buchla + Hybrid)")
         buchla_audio = render_buchla(progression, bpm, bars, synth_params=synth)
         hybrid_audio = render_hybrid(progression, bpm, bars, synth_params=synth)
@@ -775,7 +893,7 @@ if __name__ == "__main__":
         "agents": {
             "harmony": {
                 "active": True,
-                "texture": "lush pads with slow arpeggios, Dm7 → Fmaj7",
+                "texture": "lush pads with slow arpeggios, Dm7 -> Fmaj7",
                 "instruction": "fill all space the sampler leaves, warm contrast to dark content",
                 "synth": {
                     "buchla": {

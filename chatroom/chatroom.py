@@ -34,13 +34,22 @@ OUTPUT FORMAT — Music Sheet JSON (one section):
   "mood": "dark, cold, dissociative",
   "structure": "verse1",
   "timeSignature": "4/4",
+  "tension": 0.3,
+  "harmonic_rhythm": "slow|medium|fast|mixed",
   "globalNotes": "inter-agent coordination: register contracts, rhythmic locks, call-and-response",
+  "harmonic_map": [
+    {"bar": 1, "root_degree": 1, "chord_name": "Dm7"},
+    {"bar": 2, "root_degree": 1, "chord_name": "Dm7"},
+    {"bar": 3, "root_degree": 4, "chord_name": "Gm7"},
+    {"bar": 4, "root_degree": 4, "chord_name": "Gm7"}
+  ],
   "agents": {
     "sampler":    { "active": bool, "density": "sparse|medium|dense",
                     "instruction": "...", "sampleHints": ["phrase", ...],
                     "swing": 0.0-1.0, "humanize": bool,
                     "synth": { "pitch_shift_semitones": -12..12, "reverb": 0.0-1.0, "stutter_chance": 0.0-0.5 } },
     "bass_sh101": { "active": bool, "pattern": "...", "instruction": "...",
+                    "swing": 0.0-0.5,
                     "synth": { "filter_cutoff": 0.0-1.0, "pulse_width": 0.2-0.8,
                                "sub_level": 0.0-1.0, "decay": 0.0-1.0,
                                "chorus": bool, "chorus_depth_ms": 2.0-20.0 } },
@@ -72,8 +81,19 @@ OUTPUT FORMAT — Music Sheet JSON (one section):
   }
 }
 
+tension (0.0-1.0): section energy driver — low=sparse/minimal, high=peak density/complexity.
+  verse1≈0.3, instrumental≈0.45, verse2≈0.5, bridge≈0.75, verse3≈0.85, outro≈0.2
+
+harmonic_rhythm: how often chords change — "slow"=4-bar chords, "medium"=2-bar, "fast"=1-bar, "mixed"=varies.
+  Match to tension: slow at low tension, fast/mixed at peak.
+
+harmonic_map: bar-by-bar chord root mapping so bass/drums can structurally follow harmony.
+  root_degree: scale degree of chord root (1=tonic, 4=subdominant, 5=dominant, etc.)
+  One entry per bar, spanning exactly the total bars count.
+  Bass uses this to anchor notes to chord roots; drums to accent chord changes.
+
 globalNotes is the inter-agent contract — write it as a compact coordination brief:
-  how bass_sh101 anchors roots and walks the changes,
+  how bass_sh101 anchors roots and walks the changes (reference harmonic_map degrees),
   how kick timing locks to bass downbeat,
   register separation (e.g. "pads stay above C4, leave low end clear"),
   any call-and-response or interlocking patterns,

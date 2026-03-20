@@ -79,6 +79,17 @@ DEFAULT_ARC = ["verse1", "instrumental", "verse2", "bridge", "verse3", "outro"]
 OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
 EVOLVE_MODEL   = "gpt-4o"   # stable model for evolve() — independent of config.CHATGPT_MODEL
 
+# Canonical tension curve per section name.
+# Agents use this to scale density, velocity, fill probability, etc.
+_SECTION_TENSION: dict[str, float] = {
+    "verse1":       0.30,
+    "instrumental": 0.45,
+    "verse2":       0.52,
+    "bridge":       0.75,
+    "verse3":       0.85,
+    "outro":        0.20,
+}
+
 # ── EVOLVE ────────────────────────────────────────────────────────────────
 
 _EVOLVE_SYSTEM = """You are the music evolution engine for The Clankers 3.
@@ -99,6 +110,17 @@ The band has ONE bass voice: bass_sh101 (Pro-One style). There is no bass303.
 Mutate: bars, mood, density, sampleHints, patterns, active agents.
 Do NOT change bpm — it is locked for the entire track.
 Always rewrite globalNotes to reflect new inter-agent coordination for this section.
+
+CRITICAL — always include these fields in the mutated sheet:
+  tension (0.0-1.0): section energy driver. verse1≈0.3, instrumental≈0.45, verse2≈0.5,
+    bridge≈0.75, verse3≈0.85, outro≈0.2
+  harmonic_rhythm: "slow"|"medium"|"fast"|"mixed" — rate of chord changes.
+    Match to tension: slow at low tension, fast/mixed at peak.
+  harmonic_map: array of {bar, root_degree, chord_name} for every bar in the section.
+    Bass and drums use this to lock onto chord changes structurally.
+    root_degree is the scale degree of the chord root (1=tonic, 4=subdominant, 5=dominant, etc.)
+  bass_sh101.swing: 0.0-0.5 — add swing feel appropriate to the genre/mood.
+
 Return ONLY valid JSON. No explanation."""
 
 
@@ -134,8 +156,12 @@ def evolve(sheet: dict, next_section: str, api_key: str | None = None) -> dict:
         text = re.sub(r'^```(?:json)?\s*', '', text)
         text = re.sub(r'\s*```$', '', text)
         evolved = json.loads(text)
-        evolved["bpm"] = sheet["bpm"]   # enforce lock
-        print(f"  Evolved -> bpm={evolved.get('bpm')} | mood={evolved.get('mood', '')[:60]}")
+        evolved["bpm"] = sheet["bpm"]   # enforce BPM lock
+        # Enforce canonical tension so all agents have a consistent energy signal
+        canonical_tension = _SECTION_TENSION.get(next_section)
+        if canonical_tension is not None:
+            evolved["tension"] = canonical_tension
+        print(f"  Evolved -> bpm={evolved.get('bpm')} tension={evolved.get('tension', '?')} | mood={evolved.get('mood', '')[:60]}")
         return evolved
     except Exception as e:
         print(f"  [evolve error] {e} — keeping current sheet")
@@ -274,6 +300,10 @@ def run_track(
     print("Step 1: Chatroom negotiating opening section...\n")
     room  = Chatroom(session_name=arc[0])
     sheet = room.negotiate_section(brief=brief, section_name=arc[0])
+
+    # Inject canonical tension for the opening section if chatroom didn't set it
+    if "tension" not in sheet:
+        sheet["tension"] = _SECTION_TENSION.get(arc[0], 0.35)
 
     # Save initial sheet
     with open(out_dir / "sheet_initial.json", "w") as f:
