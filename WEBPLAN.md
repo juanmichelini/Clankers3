@@ -94,8 +94,10 @@ The Python backend is stripped of all audio synthesis. It becomes:
 
 ```
 POST /session/new
-  body: { brief: str, arc?: str[] }
+  body: { brief: str, arc?: str[], agents?: str[] }
   → { session_id: str, sheet: MusicSheet }
+  # agents: if provided, only those companions start active (solo/subset mode)
+  # e.g. agents: ["harmony"] → only the buchla/hybrid companion plays
 
 POST /chat
   body: { session_id: str, message: str, target_agent?: str }
@@ -218,6 +220,8 @@ Each agent maps to a companion persona with a name and visual identity. The chat
 | **The Voice** | voder | Mysterious — phonemes, breath, formant space |
 | **The Conductor** | chatroom/conductor | Orchestrates the others; listens to user intent |
 
+**Solo invocation**: each companion tile is independently clickable. Clicking a dormant companion with a brief invokes it alone — only its worklet starts, the others remain silent. The user hears just that one voice. Other companions can be invited in at any time by clicking their tile or addressing them in chat.
+
 User messages route as follows:
 1. User types in the chat box.
 2. Frontend sends `POST /chat` with the message and session ID.
@@ -232,6 +236,7 @@ Example interactions:
 - *"Darker chords, more tension"* → Keys updates chord progression and `pad_cutoff`
 - *"Something feels off with the groove"* → Conductor re-evaluates global notes, may sync bass and kick
 - *"Sing something menacing"* → Voice updates phoneme hints and `fundamental_hz`
+- Clicking the **Keys** tile with a brief → `POST /session/new { agents: ["harmony"] }` → only buchla and hybrid play
 
 ---
 
@@ -244,7 +249,8 @@ web/
 ├── session.js           — session management, sheet state, API calls
 ├── sequencer.js         — timing engine, note scheduling
 ├── companions/
-│   └── chat.js          — chat UI, message routing, companion personas
+│   ├── chat.js          — chat UI, message routing, companion personas
+│   └── roster.js        — companion tiles: click to invoke solo, mute, or invite into band
 ├── ui/
 │   ├── knobs.js         — parameter knob components
 │   ├── sheet-view.js    — visual display of Music Sheet (optional debug panel)
@@ -258,6 +264,13 @@ web/
 └── wasm/
     └── clankers_dsp_bg.wasm   (compiled output, loaded by worklets)
 ```
+
+**`companions/roster.js`** renders one tile per companion. Each tile has three states:
+- **dormant** — agent `active: false`, worklet loaded but silent
+- **solo** — agent `active: true`, all others `active: false`; clicking this tile from idle starts a solo session
+- **in band** — agent `active: true` alongside others
+
+Clicking a dormant tile with no active session opens a brief input for that companion; submitting it calls `POST /session/new` with `agents: [that_agent]`. Clicking while a session is running toggles the agent in/out of the mix via `PATCH /sheet/{id}`.
 
 Each worklet file is an `AudioWorkletProcessor` subclass:
 
@@ -308,10 +321,10 @@ The recommended order minimises wasted work and validates each layer before buil
 
 1. Create `api/` directory, `api/main.py` (FastAPI app)
 2. Add `api/session_store.py` (in-memory session dict)
-3. Add `api/routes/session.py` — `POST /session/new`
+3. Add `api/routes/session.py` — `POST /session/new` (supports `agents?: str[]` for solo/subset mode)
 4. Add `api/routes/chat.py` — `POST /chat` (calls conductor/chatroom, returns sheet only)
 5. Add `api/routes/sheet.py` — `GET`, `PATCH`, `POST /sheet/evolve`
-6. Verify: `curl POST /session/new` returns valid Music Sheet JSON
+6. Verify: `curl POST /session/new` with `{"brief": "dreamy buchla", "agents": ["harmony"]}` returns a sheet with only harmony active
 7. Verify: `curl POST /chat` updates the sheet without rendering audio
 
 ### Phase 2 — Rust DSP crate (start with drums)
@@ -336,11 +349,12 @@ The recommended order minimises wasted work and validates each layer before buil
 
 ### Phase 4 — End-to-end proof of concept
 
-1. Minimal `index.html` with a text input and a "Start" button
-2. On start: `POST /session/new` → get sheet → start sequencer + drums worklet
+1. Minimal `index.html` with companion tiles (one per agent) and a brief input
+2. Clicking the **Drummer** tile + brief → `POST /session/new { agents: ["drums"] }` → only drums worklet starts (solo mode)
 3. Verify music plays
 4. Add one knob: **Kick Pitch** (range 40–90 Hz)
 5. Verify knob sends `postMessage` to worklet and pitch changes in real time without stopping
+6. Add **invite** button on other tiles — clicking activates that agent and patches the sheet
 
 ### Phase 5 — Remaining Rust instruments
 
@@ -364,6 +378,9 @@ For each:
 4. Diff returned sheet against current sheet
 5. Push changed params to worklets via postMessage
 6. Add visual indicator when music is updating
+7. Build `companions/roster.js` — companion tiles with dormant / solo / in-band states
+8. Wire solo invocation: tile click → brief input → `POST /session/new { agents: [name] }`
+9. Wire invite: clicking a dormant tile during playback → `PATCH /sheet` to activate that agent
 
 ### Phase 7 — Polish and session management
 
