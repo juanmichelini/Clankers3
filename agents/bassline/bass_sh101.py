@@ -1,8 +1,8 @@
 """
-The Clankers 2.0 — Bass Pro-One Agent (SYNTHESIZER)
+The Clankers 2.0 -- Bass Pro-One Agent (SYNTHESIZER)
 Sequential Circuits Pro-One clone bass synthesizer.
 Two oscillators (saw + variable pulse width), sub-oscillator, 4-pole filter.
-Punchier and more cutting than the 303 — drives melodic basslines with
+Punchier and more cutting than the 303 -- drives melodic basslines with
 controlled aggression. LFO vibrato, portamento/glide, optional chorus.
 
 Music Sheet key: agents.bass_sh101
@@ -157,24 +157,24 @@ Instruction: {instruction}
 
 {density_hint}
 
-The Pro-One (Sequential Circuits) is a two-oscillator monosynth — punchy and cutting,
+The Pro-One (Sequential Circuits) is a two-oscillator monosynth -- punchy and cutting,
 thicker than the 303 but still very musical. Let the mood, section, and pattern
 drive your choices: a bridge needs contrast, a climax needs density, an outro dissolves.
 
 Return a JSON object with a "sequence" array. Each element has:
 - "degree": scale degree 1-7 (1 = root note)
-- "octave": 1 (sub-bass), 2 (bass), or 3 (upper bass) — vary this for interest
-- "beats": duration in beats — use 0.25, 0.5, 1, 2, or 4; mix values for rhythmic life
-- "accent": boolean — slightly louder, more presence
-- "slide": boolean — glide smoothly from previous note (legato)
-- "rest": boolean — silence
-- "vibrato": boolean — apply LFO pitch wobble on this note
+- "octave": 1 (sub-bass), 2 (bass), or 3 (upper bass) -- vary this for interest
+- "beats": duration in beats -- use 0.25, 0.5, 1, 2, or 4; mix values for rhythmic life
+- "accent": boolean -- slightly louder, more presence
+- "slide": boolean -- glide smoothly from previous note (legato)
+- "rest": boolean -- silence
+- "vibrato": boolean -- apply LFO pitch wobble on this note
 
 VOICE LEADING RULES (critical for musical bass lines):
 - Anchor the FIRST note of each bar to the chord root degree shown in the harmonic map above
 - Prefer stepwise motion (scale degrees ±1-2) or small leaps (±3-4 semitones) between adjacent notes
 - Avoid leaping more than a 5th (7 semitones) except for intentional dramatic effect
-- Use slide=true on notes that are close in pitch — it makes leaps sound smooth and intentional
+- Use slide=true on notes that are close in pitch -- it makes leaps sound smooth and intentional
 - Resolve tension by returning to the root degree at phrase endings (every 2-4 bars)
 - Total beats must sum to exactly {total_beats}
 
@@ -226,12 +226,12 @@ def _smooth_voice_leading(notes: list[dict], root: int, intervals: list[int]) ->
 
         if prev_midi is not None:
             jump = midi - prev_midi
-            if jump > 7 and octave > 1:          # leaping too high — step down an octave
+            if jump > 7 and octave > 1:          # leaping too high -- step down an octave
                 candidate = degree_to_midi(degree, octave - 1, root, intervals)
                 if abs(candidate - prev_midi) < abs(jump):
                     note["octave"] = octave - 1
                     midi = candidate
-            elif jump < -7 and octave < 3:        # leaping too low — step up an octave
+            elif jump < -7 and octave < 3:        # leaping too low -- step up an octave
                 candidate = degree_to_midi(degree, octave + 1, root, intervals)
                 if abs(candidate - prev_midi) < abs(jump):
                     note["octave"] = octave + 1
@@ -257,7 +257,7 @@ def _fallback_sequence(total_beats: int) -> list[dict]:
 def _square(freq_start: float, freq_end: float, n: int, pulse_width: float = 0.5) -> np.ndarray:
     """
     Phase-accumulating square/pulse wave with frequency interpolation.
-    pulse_width=0.5 → square; <0.5 → narrower pulse, brighter tone.
+    pulse_width=0.5 -> square; <0.5 -> narrower pulse, brighter tone.
     """
     freqs = np.linspace(freq_start, freq_end, n)
     phase = np.cumsum(freqs / SAMPLE_RATE) % 1.0
@@ -288,15 +288,17 @@ def _apply_vibrato(freq_start: float, freq_end: float, n: int,
 
 def _amp_envelope(n: int, accent: bool,
                   decay_param: float | None = None,
-                  release_param: float | None = None) -> np.ndarray:
+                  release_param: float | None = None,
+                  sustain_param: float | None = None) -> np.ndarray:
     """
-    Slower decay than 303 — warmer, more sustained feel.
-    decay_param  : 0.0 (very sustained/pad) → 1.0 (percussive stab); None = default
-    release_param: 0.0 (hard cutoff) → 1.0 (long fade-out tail); None = no release shaping
+    Slower decay than 303 -- warmer, more sustained feel.
+    decay_param  : 0.0 (very sustained/pad) -> 1.0 (percussive stab); None = default
+    release_param: 0.0 (hard cutoff) -> 1.0 (long fade-out tail); None = no release shaping
+    sustain_param: 0.0 (no floor) -> 1.0 (hold at full amplitude); clips exp decay floor
     """
     t = np.arange(n) / SAMPLE_RATE
 
-    # Map 0.0-1.0 → 0.3 (very slow) … 8.0 (very fast)
+    # Map 0.0-1.0 -> 0.3 (very slow) … 8.0 (very fast)
     if decay_param is not None:
         base_decay = 0.3 + float(decay_param) * 7.7
     else:
@@ -307,6 +309,11 @@ def _amp_envelope(n: int, accent: bool,
     env[:attack] *= np.linspace(0.0, 1.0, attack)
     if accent:
         env = np.minimum(env * 1.3, 1.0)
+
+    # Sustain floor: prevent decay from dropping below sustain_param after attack
+    if sustain_param is not None and sustain_param > 0.0 and n > attack:
+        floor = float(np.clip(sustain_param, 0.0, 1.0))
+        env[attack:] = np.maximum(env[attack:], floor)
 
     # Release tail: linear fade over last release_param * 50% of note
     if release_param is not None and release_param > 0.0 and n > 1:
@@ -327,10 +334,11 @@ def synth_note(
     pulse_width: float = 0.5,
     decay_param: float | None = None,
     release_param: float | None = None,
+    sustain_param: float | None = None,
 ) -> np.ndarray:
     """
     Synthesize one Pro-One-style note.
-    Square oscillator + sub-oscillator → LP filter → amplitude envelope.
+    Square oscillator + sub-oscillator -> LP filter -> amplitude envelope.
     """
     n = max(1, int(SAMPLE_RATE * duration_s))
 
@@ -348,7 +356,8 @@ def synth_note(
 
     note_cutoff = min(cutoff_hz * (1.4 if accent else 1.0), SAMPLE_RATE * 0.45)
     raw = _lowpass(raw, note_cutoff, SAMPLE_RATE)
-    raw *= _amp_envelope(n, accent, decay_param=decay_param, release_param=release_param)
+    raw *= _amp_envelope(n, accent, decay_param=decay_param, release_param=release_param,
+                         sustain_param=sustain_param)
     return raw
 
 
@@ -361,13 +370,14 @@ def render_sequence(
     pulse_width: float,
     decay_param: float | None = None,
     release_param: float | None = None,
+    sustain_param: float | None = None,
     swing: float = 0.0,
     humanize: bool = False,
 ) -> AudioSegment:
     """
     Synthesize all notes onto a timeline.
-    swing    : 0.0-0.5  — push every other beat-subdivision forward (triplet feel)
-    humanize : bool     — add per-note ±10ms onset jitter and ±3% velocity variation
+    swing    : 0.0-0.5  -- push every other beat-subdivision forward (triplet feel)
+    humanize : bool     -- add per-note ±10ms onset jitter and ±3% velocity variation
     """
     import time as _time
     import random
@@ -427,7 +437,8 @@ def render_sequence(
         freq_start = prev_freq if (slide and prev_freq is not None) else freq
         chunk = synth_note(freq_start, freq, n / SAMPLE_RATE, accent, vibrato,
                            cutoff_hz, pulse_width=pulse_width,
-                           decay_param=decay_param, release_param=release_param)
+                           decay_param=decay_param, release_param=release_param,
+                           sustain_param=sustain_param)
         chunk *= vel_mult
 
         end_i = min(onset_i + len(chunk), total_n)
@@ -446,6 +457,50 @@ def render_sequence(
 
 # ─── VST RENDER ───────────────────────────────────────────────────────────────
 
+def _set_bass_vst_params(synth, synth_params: dict) -> None:
+    """
+    Push sheet synth params into bassYnth Pro-One APVTS.
+    bassYnth Pro-One APVTS parameter IDs (from PluginProcessor.cpp):
+      filterCutoff, filterRes, filterEnvAmt, filterAttack, filterDecay,
+      filterSustain, filterRelease, ampAttack, ampDecay, ampSustain, ampRelease,
+      lfoRate, lfoAmount, lfoShape, lfoToFilter, lfoToPitch, glide,
+      oscAOctave, subOscLevel, oscALevel, oscBLevel, oscBTune, oscBPW, noiseLevel
+    All are normalized 0-1 in the APVTS unless otherwise noted.
+    """
+    def _set(name, value):
+        try:
+            synth.set_parameter(name, float(value))
+        except Exception:
+            pass
+
+    # Filter
+    raw_cutoff = synth_params.get("filter_cutoff")
+    if raw_cutoff is not None:
+        _set("filterCutoff", float(raw_cutoff))
+    _set("filterRes",    synth_params.get("resonance",       0.33))
+    _set("filterEnvAmt", synth_params.get("filter_env_amt",  0.5))
+    # Filter envelope
+    _set("filterAttack",  synth_params.get("filter_attack",  0.01))
+    _set("filterDecay",   synth_params.get("filter_decay",   0.3))
+    _set("filterSustain", synth_params.get("filter_sustain", 0.0))
+    _set("filterRelease", synth_params.get("filter_release", 0.1))
+    # Amp envelope
+    _set("ampAttack",  synth_params.get("attack",   0.005))
+    _set("ampDecay",   synth_params.get("decay",    0.5) if synth_params.get("decay") is not None else 0.5)
+    _set("ampSustain", synth_params.get("sustain",  0.0) if synth_params.get("sustain") is not None else 0.0)
+    _set("ampRelease", synth_params.get("release",  0.1) if synth_params.get("release") is not None else 0.1)
+    # LFO
+    _set("lfoRate",   synth_params.get("lfo_rate",   0.3))
+    _set("lfoAmount", synth_params.get("lfo_amount", 0.0))
+    # Oscillator / sub
+    _set("subOscLevel", synth_params.get("sub_level", 0.45))
+    pw = synth_params.get("pulse_width")
+    if pw is not None:
+        _set("oscBPW", float(pw))
+    glide = synth_params.get("glide", 0.0)
+    _set("glide", float(glide))
+
+
 def render_sequence_vst(
     notes: list[dict],
     bpm: int,
@@ -453,10 +508,16 @@ def render_sequence_vst(
     intervals: list[int],
     vst_path: str,
     total_ms: int,
+    synth_params: dict | None = None,
 ) -> AudioSegment:
     """Render the note sequence through a VST3 instrument via dawdreamer."""
     engine   = daw.RenderEngine(SAMPLE_RATE, 512)
     synth    = engine.make_plugin_processor("bass_sh101", vst_path)
+
+    # Push sheet synth params to the VST's APVTS before rendering
+    if synth_params:
+        _set_bass_vst_params(synth, synth_params)
+
     beat_s   = 60.0 / bpm
     cursor_s = 0.0
 
@@ -511,7 +572,7 @@ def _chorus(audio: AudioSegment, depth_ms: float = 8.0, rate_hz: float = 0.5) ->
 
 
 def _overdrive(audio: AudioSegment, amount: float = 2.5) -> AudioSegment:
-    """Soft tanh overdrive — gentler than the 303's distortion."""
+    """Soft tanh overdrive -- gentler than the 303's distortion."""
     samples = np.frombuffer(audio.raw_data, dtype=np.int16).astype(np.float32) / 32767.0
     samples = np.tanh(samples * amount) / np.tanh(np.array(amount))
     pcm = (samples * 32767).astype(np.int16).tobytes()
@@ -540,7 +601,7 @@ def pick_cutoff(instruction: str, mood: str) -> float:
     elif any(w in combined for w in ["dark", "heavy", "deep", "sub", "mud"]):
         return 500.0
     elif any(w in combined for w in ["warm", "soft", "gentle", "dreamy", "smooth", "mellow"]):
-        return 420.0   # warm/dreamy → very sine-like
+        return 420.0   # warm/dreamy -> very sine-like
     return 900.0  # neutral default (reduced from 1400 for cleaner tone)
 
 
@@ -583,6 +644,8 @@ def run(sheet: dict, output_path: str = "bass_sh101_output.wav",
     decay_param   = float(raw_decay) if raw_decay is not None else None
     raw_release   = synth.get("release")
     release_param = float(raw_release) if raw_release is not None else None
+    raw_sustain   = synth.get("sustain")
+    sustain_param = float(raw_sustain) if raw_sustain is not None else None
     total_ms      = int(bars * 4 * (60000 / bpm))
 
     print(f"\n── BASS PRO-ONE AGENT ───────────────")
@@ -590,7 +653,7 @@ def run(sheet: dict, output_path: str = "bass_sh101_output.wav",
     print(f"Duration   : {total_ms}ms  ({bars} bars @ {bpm} bpm)")
     print(f"Filter     : {cutoff_hz:.0f} Hz  ({'scipy' if HAS_SCIPY else 'box approx'})")
     print(f"Pulse/Sub  : pw={pulse_width:.2f}  sub={sub_level:.2f}")
-    print(f"Envelope   : decay={decay_param if decay_param is not None else 'auto'}  release={release_param if release_param is not None else 'none'}")
+    print(f"Envelope   : decay={decay_param if decay_param is not None else 'auto'}  sustain={sustain_param if sustain_param is not None else 'none'}  release={release_param if release_param is not None else 'none'}")
     print(f"Chorus     : {synth.get('chorus', False)}  depth={synth.get('chorus_depth_ms', 8.0):.1f}ms  rate={synth.get('chorus_rate_hz', 0.5):.2f}Hz")
     print(f"Generating : sequence via LLM...")
 
@@ -618,12 +681,14 @@ def run(sheet: dict, output_path: str = "bass_sh101_output.wav",
 
     if vst_path and HAS_DAWDREAMER:
         print(f"Renderer   : VST  ({os.path.basename(vst_path)})")
-        audio = render_sequence_vst(notes, bpm, root, intervals, vst_path, total_ms)
+        audio = render_sequence_vst(notes, bpm, root, intervals, vst_path, total_ms,
+                                    synth_params=synth)
     else:
         if vst_path and not HAS_DAWDREAMER:
-            print("  [warn] dawdreamer not installed — falling back to numpy synthesis")
+            print("  [warn] dawdreamer not installed -- falling back to numpy synthesis")
         audio = render_sequence(notes, bpm, root, intervals, cutoff_hz, pulse_width,
                                 decay_param=decay_param, release_param=release_param,
+                                sustain_param=sustain_param,
                                 swing=swing_amt, humanize=humanize)
 
     # Numeric chorus params override keyword detection
