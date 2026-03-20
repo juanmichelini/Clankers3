@@ -1,10 +1,14 @@
 mod bass;
 mod buchla;
+mod chorus;
 mod drums;
 mod envelope;
 mod lpg;
+mod moog_ladder;
 mod ms20_filter;
 mod oscillator;
+mod pads;
+mod reverb;
 mod rng;
 mod tpt_ladder;
 mod vactrol;
@@ -13,6 +17,7 @@ mod wavefolder;
 use bass::{BassEngine, BassParams};
 use buchla::{BuchlaEngine, BuchlaParams};
 use drums::DrumsEngine;
+use pads::{PadsEngine, PadsParams};
 use js_sys::Float32Array;
 use wasm_bindgen::prelude::*;
 
@@ -174,6 +179,84 @@ impl ClankersBuchla {
 
         Float32Array::from(&buf[..end])
     }
+}
+
+// ── Pads ──────────────────────────────────────────────────────────────────────
+
+/// HybridSynth pads — Moog ladder + ADSR + chorus + reverb (8 polyphonic voices).
+///
+/// trigger_render(midi_note, velocity, hold_samples, cc_json) → stereo Float32Array
+/// hold_samples: note-on duration in samples (beat * 60/bpm * 44100)
+/// Returns interleaved stereo [L0, R0, L1, R1, ...]
+#[wasm_bindgen]
+pub struct ClankersPads {
+    engine: PadsEngine,
+}
+
+#[wasm_bindgen]
+impl ClankersPads {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> ClankersPads {
+        ClankersPads { engine: PadsEngine::new() }
+    }
+
+    pub fn trigger_render(
+        &mut self,
+        midi_note:    u8,
+        velocity:     f32,
+        hold_samples: u32,
+        cc_json:      &str,
+    ) -> Float32Array {
+        let p    = parse_pads_params(cc_json);
+        let hold = hold_samples as usize;
+
+        // Render: attack + hold + full release tail
+        let release_tail = (p.amp_release * 44100.0) as usize + 4410;
+        let total        = hold + release_tail;
+
+        let mut buf_l = vec![0.0f32; total];
+        let mut buf_r = vec![0.0f32; total];
+
+        self.engine.trigger(midi_note, velocity, hold, &p);
+        self.engine.process(&mut buf_l, &mut buf_r, &p);
+
+        // Trim trailing silence
+        let end = buf_l.iter().zip(buf_r.iter())
+            .rposition(|(&l, &r)| l.abs() > 1e-5 || r.abs() > 1e-5)
+            .map(|i| (i + 441).min(total))
+            .unwrap_or(1024);
+
+        // Interleave stereo
+        let mut interleaved = vec![0.0f32; end * 2];
+        for i in 0..end {
+            interleaved[i * 2]     = buf_l[i];
+            interleaved[i * 2 + 1] = buf_r[i];
+        }
+
+        Float32Array::from(interleaved.as_slice())
+    }
+}
+
+fn parse_pads_params(cc_json: &str) -> PadsParams {
+    let mut p = PadsParams::default();
+    for (key, val) in parse_cc_map(cc_json) {
+        let n = val / 127.0;
+        match key {
+            74 => p.cutoff_hz    = 20.0 + n * 7980.0,   // 20–8000 Hz
+            71 => p.resonance    = n * 0.9,
+            73 => p.amp_attack   = 0.05 + n * 3.95,
+            75 => p.amp_decay    = 0.05 + n * 1.95,
+            79 => p.amp_sustain  = n,
+            72 => p.amp_release  = 0.1  + n * 3.9,
+            88 => p.reverb_size  = n,
+            91 => p.reverb_mix   = n,
+            29 => p.chorus_rate  = 0.1  + n * 4.9,
+            30 => p.chorus_depth = n,
+            31 => p.chorus_mix   = n,
+            _  => {}
+        }
+    }
+    p
 }
 
 fn parse_buchla_params(cc_json: &str) -> BuchlaParams {

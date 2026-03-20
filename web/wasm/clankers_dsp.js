@@ -155,6 +155,46 @@ export class ClankersDrums {
 }
 if (Symbol.dispose) ClankersDrums.prototype[Symbol.dispose] = ClankersDrums.prototype.free;
 
+/**
+ * HybridSynth pads — Moog ladder + ADSR + chorus + reverb (8 polyphonic voices).
+ *
+ * trigger_render(midi_note, velocity, hold_samples, cc_json) → stereo Float32Array
+ * hold_samples: note-on duration in samples (beat * 60/bpm * 44100)
+ * Returns interleaved stereo [L0, R0, L1, R1, ...]
+ */
+export class ClankersPads {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        ClankersPadsFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_clankerspads_free(ptr, 0);
+    }
+    constructor() {
+        const ret = wasm.clankerspads_new();
+        this.__wbg_ptr = ret >>> 0;
+        ClankersPadsFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * @param {number} midi_note
+     * @param {number} velocity
+     * @param {number} hold_samples
+     * @param {string} cc_json
+     * @returns {Float32Array}
+     */
+    trigger_render(midi_note, velocity, hold_samples, cc_json) {
+        const ptr0 = passStringToWasm0(cc_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.clankerspads_trigger_render(this.__wbg_ptr, midi_note, velocity, hold_samples, ptr0, len0);
+        return ret;
+    }
+}
+if (Symbol.dispose) ClankersPads.prototype[Symbol.dispose] = ClankersPads.prototype.free;
+
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
@@ -190,6 +230,9 @@ const ClankersBuchlaFinalization = (typeof FinalizationRegistry === 'undefined')
 const ClankersDrumsFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_clankersdrums_free(ptr >>> 0, 1));
+const ClankersPadsFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_clankerspads_free(ptr >>> 0, 1));
 
 function getArrayF32FromWasm0(ptr, len) {
     ptr = ptr >>> 0;

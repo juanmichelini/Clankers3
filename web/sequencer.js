@@ -22,6 +22,7 @@ export class Sequencer {
     this.drums  = engines.drums  ?? null;
     this.bass   = engines.bass   ?? null;
     this.buchla = engines.buchla ?? null;
+    this.pads   = engines.pads   ?? null;
     this.sheet  = null;
     this._timer = null;
 
@@ -91,6 +92,14 @@ export class Sequencer {
             events.push({ beatTime: beat, type: 'buchla', midiNote: note, velocity: vel, ccJson });
           }
         }
+
+        if (track.t === 6 && this.pads) {
+          const durBeats   = track.dur ?? step.d ?? 0.5;
+          const ccJson     = JSON.stringify(cc);
+          for (const note of notes) {
+            events.push({ beatTime: beat, type: 'pads', midiNote: note, velocity: vel, ccJson, durBeats });
+          }
+        }
       }
 
       beat += d;
@@ -135,6 +144,11 @@ export class Sequencer {
     } else if (ev.type === 'buchla') {
       const samples = this.buchla.trigger_render(ev.midiNote, ev.velocity, ev.ccJson);
       this._playBuffer(samples, when);
+    } else if (ev.type === 'pads') {
+      const holdSamples = Math.round(ev.durBeats * (60 / this._bpm) * this.ctx.sampleRate);
+      // Pads returns interleaved stereo
+      const interleaved = this.pads.trigger_render(ev.midiNote, ev.velocity, holdSamples, ev.ccJson);
+      this._playStereoInterleaved(interleaved, when);
     }
   }
 
@@ -142,6 +156,24 @@ export class Sequencer {
     if (!samples || samples.length === 0) return;
     const ab = this.ctx.createBuffer(1, samples.length, this.ctx.sampleRate);
     ab.copyToChannel(samples, 0);
+    const src = this.ctx.createBufferSource();
+    src.buffer = ab;
+    src.connect(this.ctx.destination);
+    src.start(when);
+  }
+
+  _playStereoInterleaved(interleaved, when) {
+    if (!interleaved || interleaved.length < 2) return;
+    const frames = Math.floor(interleaved.length / 2);
+    const ab = this.ctx.createBuffer(2, frames, this.ctx.sampleRate);
+    const l = new Float32Array(frames);
+    const r = new Float32Array(frames);
+    for (let i = 0; i < frames; i++) {
+      l[i] = interleaved[i * 2];
+      r[i] = interleaved[i * 2 + 1];
+    }
+    ab.copyToChannel(l, 0);
+    ab.copyToChannel(r, 1);
     const src = this.ctx.createBufferSource();
     src.buffer = ab;
     src.connect(this.ctx.destination);

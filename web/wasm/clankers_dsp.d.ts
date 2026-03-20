@@ -69,6 +69,20 @@ export class ClankersDrums {
     trigger_render(voice_id: number, velocity: number, p0: number, p1: number, p2: number): Float32Array;
 }
 
+/**
+ * HybridSynth pads — Moog ladder + ADSR + chorus + reverb (8 polyphonic voices).
+ *
+ * trigger_render(midi_note, velocity, hold_samples, cc_json) → stereo Float32Array
+ * hold_samples: note-on duration in samples (beat * 60/bpm * 44100)
+ * Returns interleaved stereo [L0, R0, L1, R1, ...]
+ */
+export class ClankersPads {
+    free(): void;
+    [Symbol.dispose](): void;
+    constructor();
+    trigger_render(midi_note: number, velocity: number, hold_samples: number, cc_json: string): Float32Array;
+}
+
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
@@ -76,6 +90,7 @@ export interface InitOutput {
     readonly __wbg_clankersbass_free: (a: number, b: number) => void;
     readonly __wbg_clankersbuchla_free: (a: number, b: number) => void;
     readonly __wbg_clankersdrums_free: (a: number, b: number) => void;
+    readonly __wbg_clankerspads_free: (a: number, b: number) => void;
     readonly clankersbass_new: (a: number) => number;
     readonly clankersbass_render: (a: number, b: number) => any;
     readonly clankersbass_trigger: (a: number, b: number, c: number, d: number, e: number) => void;
@@ -84,6 +99,8 @@ export interface InitOutput {
     readonly clankersbuchla_trigger_render: (a: number, b: number, c: number, d: number, e: number) => any;
     readonly clankersdrums_new: (a: number) => number;
     readonly clankersdrums_trigger_render: (a: number, b: number, c: number, d: number, e: number, f: number) => any;
+    readonly clankerspads_new: () => number;
+    readonly clankerspads_trigger_render: (a: number, b: number, c: number, d: number, e: number, f: number) => any;
     readonly __wbindgen_externrefs: WebAssembly.Table;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;

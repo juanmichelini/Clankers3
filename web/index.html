@@ -76,7 +76,7 @@
     <textarea id="sheet-json">{
   "bpm": 128,
   "steps": [
-    { "d": 0.25, "tracks": [{ "t": 10, "n": [36], "v": 110 }, { "t": 2, "n": [6],  "v": 98, "cc": {"71":42,"74":48,"23":30} }, { "t": 1, "n": [54], "v": 90, "cc": {"74":72,"20":37,"17":8,"19":5} }] },
+    { "d": 0.25, "tracks": [{ "t": 10, "n": [36], "v": 110 }, { "t": 2, "n": [6],  "v": 98, "cc": {"71":42,"74":48,"23":30} }, { "t": 1, "n": [54], "v": 90, "cc": {"74":72,"20":37,"17":8,"19":5} }, { "t": 6, "n": [54,57,61], "v": 62, "dur": 4.0, "cc": {"74":40,"73":65,"72":92,"91":88,"88":85,"29":30,"30":60,"31":50} }] },
     { "d": 0.25, "tracks": [{ "t": 1,  "n": [57], "v": 75, "cc": {"74":68,"20":37,"17":8,"19":5} }] },
     { "d": 0.25, "tracks": [{ "t": 10, "n": [42], "v": 72  }, { "t": 1, "n": [60], "v": 80, "cc": {"74":70,"20":40,"17":8,"19":5} }] },
     { "d": 0.25, "tracks": [{ "t": 2,  "n": [8],  "v": 80, "cc": {"74":52,"23":20} }, { "t": 1, "n": [57], "v": 70, "cc": {"74":65,"20":35,"17":6,"19":4} }] },
@@ -113,7 +113,7 @@
 <div id="log">Click a pad or press PLAY to start.</div>
 
 <script type="module">
-import init, { ClankersDrums, ClankersBass, ClankersBuchla } from './wasm/clankers_dsp.js';
+import init, { ClankersDrums, ClankersBass, ClankersBuchla, ClankersPads } from './wasm/clankers_dsp.js';
 import { Sequencer } from './sequencer.js';
 
 const PADS = [
@@ -152,6 +152,7 @@ let ctx    = null;
 let engine = null;   // ClankersDrums
 let bass   = null;   // ClankersBass
 let buchla = null;   // ClankersBuchla
+let pads   = null;   // ClankersPads
 
 async function ensureReady() {
   if (engine) {
@@ -167,7 +168,8 @@ async function ensureReady() {
   engine = new ClankersDrums(seed);
   bass   = new ClankersBass(seed ^ 0xdeadbeef);
   buchla = new ClankersBuchla();
-  log('WASM engines ready (drums + bass + buchla) — click a pad!');
+  pads   = new ClankersPads();
+  log('WASM engines ready (drums + bass + buchla + pads) — click a pad!');
 }
 
 function triggerPad(voiceId) {
@@ -195,7 +197,7 @@ let seq = null;
 
 function getSeq() {
   if (!engine) throw new Error('Engine not ready');
-  if (!seq) seq = new Sequencer(ctx, { drums: engine, bass, buchla });
+  if (!seq) seq = new Sequencer(ctx, { drums: engine, bass, buchla, pads });
   return seq;
 }
 
