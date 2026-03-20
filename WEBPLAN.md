@@ -708,5 +708,169 @@ School Mode companions wear a slightly different visual: a pair of small glasses
 
 ---
 
+## 16. Knowledge Progression — Unlock System
+
+Learning is the unlock key. The more a user understands about music production, the more of the tool they can access. Genre styles, synthesis engines, companion abilities, and UI features are all locked behind knowledge milestones rather than time-gating or paywalls.
+
+### 16.1 Core Idea
+
+Every concept taught in Section 15 is a **learnable unit**. When the user engages with a unit (reads a lesson, asks a question, adjusts a parameter mid-lesson, or correctly answers a comprehension question), that unit is marked learned. Enough learned units in a domain unlocks the next tier of tools in that domain.
+
+The progression is **musical and tangible** — you don't unlock a badge, you unlock a sound.
+
+### 16.2 Knowledge Units
+
+Each companion owns a set of knowledge units. These are the same concepts listed in Section 15.2, formalised:
+
+| ID | Companion | Concept | Unlocks |
+|----|-----------|---------|---------|
+| `drum.grid` | Drummer | 16-step grid, bars, beats | Odd time signatures (5/4, 7/8) in the drum editor |
+| `drum.swing` | Drummer | Swing, groove quantisation | Swing knob unlocked (previously hidden) |
+| `drum.kick_synthesis` | Drummer | Kick: sine chirp + noise + pitch env | Manual kick synth editor (tune each stage) |
+| `drum.polyrhythm` | Drummer | Two patterns of different lengths | Pattern length up to 32 steps, cross-rhythm layers |
+| `drum.styles` | Drummer | 4-on-floor, breakbeat, half-time | Drum style picker: Jungle, Afrobeat, Latin, Drill |
+| `bass.scale_degrees` | Bassist | Degrees 1, 3, 5, scale awareness | Modal basslines (Dorian, Mixolydian, Phrygian) |
+| `bass.filter` | Bassist | Cutoff, resonance, acid squelch | Filter automation lane; envelope-to-filter routing |
+| `bass.portamento` | Bassist | Slide / portamento | Portamento per-note control, pitch glide curves |
+| `bass.sub` | Bassist | Sub oscillator | Dual-oscillator bass engine |
+| `keys.chord_construction` | Keys | Root, third, fifth, seventh | Chord type picker: 9ths, 11ths, sus chords |
+| `keys.tension` | Keys | Diminished, augmented, tension/release | Tension-arc automation: schedule tension over time |
+| `keys.fm` | Keys | FM synthesis, carrier/modulator | FM engine for Keys companion (replaces default) |
+| `keys.granular` | Keys | Granular synthesis, grains | Granular engine for Keys companion |
+| `voice.formants` | Voice | Formant peaks, vowel shaping | Manual formant editor: drag F1/F2 on a plot |
+| `voice.whisper` | Voice | Noise source vs glottal pulse | Whisper mode toggle |
+| `voice.phonemes` | Voice | Voiced vs unvoiced consonants | Phoneme sequencer — write words as beat patterns |
+| `conductor.structure` | Conductor | Sections, verse/chorus/bridge | Section manager: name and arrange song blocks |
+| `conductor.compression` | Conductor | Compression, dynamic control | Per-companion compressor controls |
+| `conductor.mastering` | Conductor | Mastering chain | Mastering chain panel with saturation, limiting |
+
+### 16.3 Engagement Detection
+
+A knowledge unit is marked **learned** when any of these happens:
+
+1. **Passive lesson** — the companion teaches the concept during a structured lesson (Section 15.4) and the user stays through the final step.
+2. **Natural question** — the user asks about the concept in chat ("what is resonance?", "how does swing work?") and the companion answers with school mode active.
+3. **Active discovery** — the user manually adjusts a parameter that is annotated in School Mode. The annotation appears, they keep it toggled on for at least 5 seconds.
+4. **Comprehension check** — the companion asks a short follow-up question ("what does lowering the cutoff do to the sound?") and the user gives an answer. Any non-empty answer counts; this is not a quiz, just active recall.
+
+### 16.4 Unlock Flow
+
+```
+unit learned
+    │
+    ▼
+[ progress bar fills in companion's knowledge tier ]
+    │
+    ├── tier not complete → no change except bar progress
+    │
+    └── tier complete
+           │
+           ▼
+       unlock animation: companion does a small celebration,
+       a new item appears in the UI (style, engine, control)
+           │
+           ▼
+       companion says: "You've got a feel for [concept]. Try [unlocked thing]."
+```
+
+The unlock is always presented as a **musical invitation**, not a reward popup. The companion introduces the new tool as a natural next step.
+
+### 16.5 Genre Style Unlocks
+
+Genre styles are the most visible unlocks. The default set is small; the rest require knowledge:
+
+| Style | Required Units |
+|-------|---------------|
+| Techno *(default)* | — |
+| House *(default)* | — |
+| Lo-fi Hip Hop | `drum.swing` + `keys.chord_construction` |
+| Acid | `bass.filter` + `drum.grid` |
+| Drum & Bass | `drum.polyrhythm` + `bass.sub` |
+| Jungle | `drum.styles` + `bass.portamento` |
+| Afrobeat | `drum.styles` + `keys.tension` |
+| Ambient | `keys.granular` + `conductor.structure` |
+| Jazz Fusion | `keys.chord_construction` + `keys.tension` + `bass.scale_degrees` |
+| Drill | `drum.styles` + `bass.filter` + `conductor.compression` |
+| Industrial | `drum.kick_synthesis` + `keys.fm` |
+| A Cappella / Vocal | `voice.formants` + `voice.phonemes` + `conductor.structure` |
+| Orchestral | `conductor.mastering` + `keys.chord_construction` + `conductor.structure` |
+
+When a style is locked, it is visible in the genre picker as a greyed tile with a small lock icon and a tooltip: *"Learn [required concept] to unlock"*.
+
+### 16.6 Progression State
+
+State is stored per-session in the backend and optionally persisted per-user (if auth is added):
+
+```python
+@dataclass
+class KnowledgeState:
+    learned_units: set[str]          # e.g. {"drum.grid", "bass.filter"}
+    unlocked_styles: set[str]        # derived from learned_units
+    unlocked_engines: set[str]       # e.g. {"keys.fm", "keys.granular"}
+    unlocked_controls: set[str]      # e.g. {"drum.swing_knob", "bass.filter_lane"}
+```
+
+The session API exposes this state so the frontend can render locks accurately:
+
+```
+GET /session/{id}/progress
+→ { learned_units: [...], unlocked_styles: [...], unlocked_controls: [...] }
+```
+
+### 16.7 New Session Knowledge Seeding
+
+When a user starts a new session with a genre brief (Section 3), the system infers which knowledge units they probably already have based on what that genre requires. A user who asks for a Drum & Bass track is not shown locks on `drum.polyrhythm` — they clearly understand the concept at some level. The session starts with those units pre-marked so the experience doesn't feel patronising.
+
+### 16.8 Companion Awareness of Locks
+
+Companions are aware of what is locked. If the user asks a companion to use an unlocked engine ("use the FM synth"), they respond normally. If the engine is locked, the companion explains the prerequisite instead of silently ignoring the request:
+
+```
+[Keys] → The FM engine isn't available yet — we haven't talked about carrier/modulator
+relationships. Ask me to "teach me FM synthesis" and I'll walk you through it.
+Once you've got it, the FM engine will open up.
+```
+
+### 16.9 Companion Evolution — They Grow With You
+
+Companions don't stay static. As the user's `KnowledgeState` expands, each companion's **voice, vocabulary, and musical ambition** evolve to match.
+
+Three growth stages per companion:
+
+**Stage 1 — Beginner** *(0–4 units learned for that companion)*
+- Explanations are fully analogical: "think of the cutoff like a curtain over the speakers"
+- Musical decisions are conservative: safe chords, stable rhythms, obvious structures
+- Companion is warm, patient, never uses jargon without explaining it first
+- They reference only what the user has already seen
+
+**Stage 2 — Developing** *(5–9 units)*
+- Companion starts using correct terminology alongside analogy: "I'm pulling the resonance — that peak at the cutoff creates the squelch sound acid bass is known for"
+- Musical decisions get more interesting: syncopation, modal borrowing, extended chords
+- They start asking the user for input: "You've learned about tension — want me to add a diminished chord at the end of this phrase?"
+- References concepts learned earlier without re-explaining them
+
+**Stage 3 — Fluent** *(10+ units, or all units for that companion)*
+- Companion communicates as a peer: brief, precise, no hand-holding unless asked
+- Musical decisions are ambitious: polyrhythm, FM timbre design, structural tension arcs
+- They collaborate rather than explain: "I want to try some cross-rhythm between the kick and bass — you know why this works"
+- Schooling Mode annotations are still available on request but off by default at this stage
+
+**Stage transitions are gradual.** There is no hard cutoff moment — vocabulary and complexity shift incrementally with each new unit learned. The companion never regresses; if the user unlocks granular and then doesn't use it for a while, the companion still treats them as someone who understands it.
+
+**Companion memory of shared progress.** When the companion reaches Stage 2 or 3, they occasionally reference the learning journey: "Remember when we first talked about swing? You've got that instinct now — this groove is a lot more nuanced than your first session." This is generated from the `learned_units` history, not hand-authored.
+
+### 16.10 Visual Progress Panel
+
+A collapsible sidebar (or companion-detail drawer) shows the user's current knowledge state per companion:
+
+- A small grid of concept bubbles, each filled or hollow.
+- Hovering a hollow bubble shows: concept name, which control it unlocks, and a prompt like "Ask [companion] to teach you this".
+- Filled bubbles show a one-line summary of what the user learned.
+- A genre-unlock strip at the bottom shows all styles, greyed or coloured based on completion.
+
+The panel is opt-in — the `?` button from Section 15.1 opens it. Users who don't want to think about progression can ignore it entirely.
+
+---
+
 *Last updated: 2026-03-20*
 *Branch: `claude/clankers3-setup-8Wwqw`*
