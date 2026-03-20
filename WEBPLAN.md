@@ -831,7 +831,35 @@ relationships. Ask me to "teach me FM synthesis" and I'll walk you through it.
 Once you've got it, the FM engine will open up.
 ```
 
-### 16.9 Visual Progress Panel
+### 16.9 Companion Evolution — They Grow With You
+
+Companions don't stay static. As the user's `KnowledgeState` expands, each companion's **voice, vocabulary, and musical ambition** evolve to match.
+
+Three growth stages per companion:
+
+**Stage 1 — Beginner** *(0–4 units learned for that companion)*
+- Explanations are fully analogical: "think of the cutoff like a curtain over the speakers"
+- Musical decisions are conservative: safe chords, stable rhythms, obvious structures
+- Companion is warm, patient, never uses jargon without explaining it first
+- They reference only what the user has already seen
+
+**Stage 2 — Developing** *(5–9 units)*
+- Companion starts using correct terminology alongside analogy: "I'm pulling the resonance — that peak at the cutoff creates the squelch sound acid bass is known for"
+- Musical decisions get more interesting: syncopation, modal borrowing, extended chords
+- They start asking the user for input: "You've learned about tension — want me to add a diminished chord at the end of this phrase?"
+- References concepts learned earlier without re-explaining them
+
+**Stage 3 — Fluent** *(10+ units, or all units for that companion)*
+- Companion communicates as a peer: brief, precise, no hand-holding unless asked
+- Musical decisions are ambitious: polyrhythm, FM timbre design, structural tension arcs
+- They collaborate rather than explain: "I want to try some cross-rhythm between the kick and bass — you know why this works"
+- Schooling Mode annotations are still available on request but off by default at this stage
+
+**Stage transitions are gradual.** There is no hard cutoff moment — vocabulary and complexity shift incrementally with each new unit learned. The companion never regresses; if the user unlocks granular and then doesn't use it for a while, the companion still treats them as someone who understands it.
+
+**Companion memory of shared progress.** When the companion reaches Stage 2 or 3, they occasionally reference the learning journey: "Remember when we first talked about swing? You've got that instinct now — this groove is a lot more nuanced than your first session." This is generated from the `learned_units` history, not hand-authored.
+
+### 16.10 Visual Progress Panel
 
 A collapsible sidebar (or companion-detail drawer) shows the user's current knowledge state per companion:
 
