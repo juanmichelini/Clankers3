@@ -1,14 +1,18 @@
 /**
  * ClankerBoy JSON Step Sequencer — Web Audio lookahead scheduler
  *
- * Reads a ClankerBoy JSON sheet and drives WASM instrument engines.
+ * All WASM rendering happens at load() time (pre-render).
+ * The tick loop only schedules pre-computed AudioBuffers — no heavy work on the timer.
+ *
  * Supported tracks:
  *   t:10  AntigravityDrums (ClankersDrums)
  *   t:2   Pro-One Bass     (ClankersBass)
+ *   t:1   Buchla 259/292   (ClankersBuchla)
+ *   t:6   HybridSynth Pads (ClankersPads)
  *
  * Usage:
- *   const seq = new Sequencer(audioCtx, { drums, bass });
- *   seq.load(sheet);
+ *   const seq = new Sequencer(audioCtx, { drums, bass, buchla, pads });
+ *   seq.load(sheet);   // compiles + pre-renders all AudioBuffers
  *   seq.start();
  *   seq.stop();
  */
@@ -27,7 +31,7 @@ export class Sequencer {
     this._timer = null;
 
     this._bpm       = 120;
-    this._steps     = [];   // [{ beatTime, track, ... }]
+    this._steps     = [];   // [{ beatTime, audioBuffer, stereo }]
     this._loopBeats = 0;
     this._startTime = 0;
     this._nextBeat  = 0;
@@ -69,7 +73,7 @@ export class Sequencer {
   // ── Internal ───────────────────────────────────────────────────────────────
 
   _compile(sheet) {
-    const events = [];
+    const raw = [];
     let beat = 0;
 
     for (const step of sheet.steps ?? []) {
@@ -83,29 +87,29 @@ export class Sequencer {
         if (track.t === 10 && this.drums) {
           for (const note of notes) {
             const { voiceId, p0, p1, p2 } = drumNoteToParams(note, cc);
-            events.push({ beatTime: beat, type: 'drum', voiceId, velocity: vel, p0, p1, p2 });
+            raw.push({ beatTime: beat, type: 'drum', voiceId, velocity: vel, p0, p1, p2 });
           }
         }
 
         if (track.t === 2 && this.bass) {
           for (const note of notes) {
-            const ccJson = JSON.stringify(cc);
-            events.push({ beatTime: beat, type: 'bass', midiNote: note, velocity: vel, ccJson });
+            raw.push({ beatTime: beat, type: 'bass', midiNote: note, velocity: vel,
+                       ccJson: JSON.stringify(cc) });
           }
         }
 
         if (track.t === 1 && this.buchla) {
           for (const note of notes) {
-            const ccJson = JSON.stringify(cc);
-            events.push({ beatTime: beat, type: 'buchla', midiNote: note, velocity: vel, ccJson });
+            raw.push({ beatTime: beat, type: 'buchla', midiNote: note, velocity: vel,
+                       ccJson: JSON.stringify(cc) });
           }
         }
 
         if (track.t === 6 && this.pads) {
-          const durBeats   = track.dur ?? step.d ?? 0.5;
-          const ccJson     = JSON.stringify(cc);
+          const durBeats = track.dur ?? step.d ?? 0.5;
           for (const note of notes) {
-            events.push({ beatTime: beat, type: 'pads', midiNote: note, velocity: vel, ccJson, durBeats });
+            raw.push({ beatTime: beat, type: 'pads', midiNote: note, velocity: vel,
+                       ccJson: JSON.stringify(cc), durBeats });
           }
         }
       }
@@ -113,9 +117,41 @@ export class Sequencer {
       beat += d;
     }
 
-    this._steps     = events.sort((a, b) => a.beatTime - b.beatTime);
+    raw.sort((a, b) => a.beatTime - b.beatTime);
+
+    // Pre-render all WASM buffers now, not during the tick
+    const t0 = performance.now();
+    const events = raw.map(ev => {
+      const audioBuffer = this._renderEvent(ev);
+      return { beatTime: ev.beatTime, audioBuffer };
+    });
+    const elapsed = (performance.now() - t0).toFixed(0);
+
+    this._steps     = events;
     this._loopBeats = beat;
-    console.log(`[seq] compiled ${events.length} events (${beat} beats @ ${this._bpm} BPM)`);
+    console.log(`[seq] compiled ${events.length} events (${beat} beats @ ${this._bpm} BPM) — pre-render ${elapsed}ms`);
+  }
+
+  /** Render one event to an AudioBuffer synchronously. Called at compile time. */
+  _renderEvent(ev) {
+    if (ev.type === 'drum') {
+      const samples = this.drums.trigger_render(ev.voiceId, ev.velocity, ev.p0, ev.p1, ev.p2);
+      return this._monoToAudioBuffer(samples);
+
+    } else if (ev.type === 'bass') {
+      const samples = this.bass.trigger_render(ev.midiNote, ev.velocity, ev.ccJson);
+      return this._monoToAudioBuffer(samples);
+
+    } else if (ev.type === 'buchla') {
+      const samples = this.buchla.trigger_render(ev.midiNote, ev.velocity, ev.ccJson);
+      return this._monoToAudioBuffer(samples);
+
+    } else if (ev.type === 'pads') {
+      const holdSamples = Math.round(ev.durBeats * (60 / this._bpm) * this.ctx.sampleRate);
+      const interleaved = this.pads.trigger_render(ev.midiNote, ev.velocity, holdSamples, ev.ccJson);
+      return this._stereoInterleavedToAudioBuffer(interleaved);
+    }
+    return null;
   }
 
   _beatsToSeconds(beats) { return beats * (60 / this._bpm); }
@@ -137,41 +173,28 @@ export class Sequencer {
 
       if (evTime > scheduleUntil) break;
 
-      this._scheduleEvent(ev, evTime);
+      if (ev.audioBuffer) {
+        const src = this.ctx.createBufferSource();
+        src.buffer = ev.audioBuffer;
+        src.connect(this._masterGain ?? this.ctx.destination);
+        src.start(evTime);
+      }
+
       this._stepIdx++;
     }
   }
 
-  _scheduleEvent(ev, when) {
-    if (ev.type === 'drum') {
-      const samples = this.drums.trigger_render(ev.voiceId, ev.velocity, ev.p0, ev.p1, ev.p2);
-      this._playBuffer(samples, when);
-    } else if (ev.type === 'bass') {
-      const samples = this.bass.trigger_render(ev.midiNote, ev.velocity, ev.ccJson);
-      this._playBuffer(samples, when);
-    } else if (ev.type === 'buchla') {
-      const samples = this.buchla.trigger_render(ev.midiNote, ev.velocity, ev.ccJson);
-      this._playBuffer(samples, when);
-    } else if (ev.type === 'pads') {
-      const holdSamples = Math.round(ev.durBeats * (60 / this._bpm) * this.ctx.sampleRate);
-      // Pads returns interleaved stereo
-      const interleaved = this.pads.trigger_render(ev.midiNote, ev.velocity, holdSamples, ev.ccJson);
-      this._playStereoInterleaved(interleaved, when);
-    }
-  }
+  // ── Buffer helpers ─────────────────────────────────────────────────────────
 
-  _playBuffer(samples, when) {
-    if (!samples || samples.length === 0) return;
+  _monoToAudioBuffer(samples) {
+    if (!samples || samples.length === 0) return null;
     const ab = this.ctx.createBuffer(1, samples.length, this.ctx.sampleRate);
     ab.copyToChannel(samples, 0);
-    const src = this.ctx.createBufferSource();
-    src.buffer = ab;
-    src.connect(this._masterGain ?? this.ctx.destination);
-    src.start(when);
+    return ab;
   }
 
-  _playStereoInterleaved(interleaved, when) {
-    if (!interleaved || interleaved.length < 2) return;
+  _stereoInterleavedToAudioBuffer(interleaved) {
+    if (!interleaved || interleaved.length < 2) return null;
     const frames = Math.floor(interleaved.length / 2);
     const ab = this.ctx.createBuffer(2, frames, this.ctx.sampleRate);
     const l = new Float32Array(frames);
@@ -182,10 +205,7 @@ export class Sequencer {
     }
     ab.copyToChannel(l, 0);
     ab.copyToChannel(r, 1);
-    const src = this.ctx.createBufferSource();
-    src.buffer = ab;
-    src.connect(this._masterGain ?? this.ctx.destination);
-    src.start(when);
+    return ab;
   }
 }
 
