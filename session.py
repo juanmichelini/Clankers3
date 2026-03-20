@@ -18,7 +18,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from conductor.conductor import run_track, DEFAULT_ARC
+from conductor.conductor import run_track, run_solo, DEFAULT_ARC
 
 
 def main():
@@ -31,6 +31,12 @@ Examples:
   python session.py "acid rave, euphoric" --arc verse1 verse2 outro
   python session.py "ambient drone" --disable drums bass303 --out ambient_out
   python session.py "paranoid breakdown" --arc verse1 bridge verse3 --disable voder
+
+Solo companion mode (invoke a single agent in isolation):
+  python session.py "dreamy buchla melodies" --solo harmony
+  python session.py "heavy kick, sparse snare" --solo drums
+  python session.py "cold acid bass" --solo bass_sh101
+  python session.py "eerie formant whispers" --solo voder --section bridge
         """,
     )
     parser.add_argument(
@@ -58,16 +64,35 @@ Examples:
         metavar="AGENT",
         help="Agent names to disable: sampler bass303 bass_sh101 drums harmony voder",
     )
+    parser.add_argument(
+        "--solo",
+        default=None,
+        metavar="AGENT",
+        help="Invoke a single companion in isolation: sampler bass_sh101 drums harmony voder",
+    )
+    parser.add_argument(
+        "--section",
+        default="verse1",
+        help="Section name for --solo mode (default: verse1)",
+    )
 
     args = parser.parse_args()
 
     try:
-        result = run_track(
-            brief   = args.brief,
-            arc     = args.arc,
-            out_dir = args.out,
-            disable = args.disable,
-        )
+        if args.solo:
+            result = run_solo(
+                brief   = args.brief,
+                agent   = args.solo,
+                section = args.section,
+                out_dir = args.out,
+            )
+        else:
+            result = run_track(
+                brief   = args.brief,
+                arc     = args.arc,
+                out_dir = args.out,
+                disable = args.disable,
+            )
         if result is None:
             print("[session] No audio produced — check agent logs in the output directory.")
             sys.exit(1)

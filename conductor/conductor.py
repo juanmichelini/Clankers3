@@ -322,6 +322,65 @@ def run_track(
     return full_track
 
 
+# ── SOLO COMPANION ────────────────────────────────────────────────────────
+
+def run_solo(
+    brief:   str,
+    agent:   str,
+    section: str = "verse1",
+    out_dir: str | Path = "output",
+) -> AudioSegment | None:
+    """
+    Run a single companion in isolation.
+    Negotiates a music sheet for the brief, then activates only the target agent.
+
+    Example:
+        run_solo("dreamy buchla melodies, slow evolving", "harmony")
+        run_solo("heavy kick, sparse snare", "drums")
+    """
+    from mixer.mixer import mix_section
+
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    print(f"\n{'=' * 62}")
+    print(f"  THE CLANKERS 3 — SOLO: {agent.upper()}")
+    print(f"  Brief  : {brief}")
+    print(f"  Section: {section}")
+    print(f"{'=' * 62}\n")
+
+    # Negotiate a full music sheet, then isolate the target agent
+    print("Negotiating music sheet...\n")
+    room  = Chatroom(session_name=section)
+    sheet = room.negotiate_section(brief=brief, section_name=section)
+
+    agents_block = sheet.setdefault("agents", {})
+    for name in list(agents_block.keys()):
+        agents_block[name]["active"] = (name == agent)
+    if agent not in agents_block:
+        agents_block[agent] = {"active": True}
+
+    with open(out_dir / f"sheet_solo_{agent}.json", "w") as f:
+        json.dump(sheet, f, indent=2)
+
+    print(f"\n-- SOLO: {agent.upper()} " + "-" * 40)
+    tracks = run_session(sheet, out_dir=str(out_dir), section_label=f"solo_{agent}")
+
+    if not tracks:
+        print(f"  [solo] no audio produced for {agent}")
+        return None
+
+    mixed = mix_section(tracks, sheet)
+    if mixed:
+        path = out_dir / f"solo_{agent}.wav"
+        mixed.export(str(path), format="wav")
+        print(f"\n  DONE: {path}  ({len(mixed)/1000:.1f}s)")
+        print(f"{'=' * 62}\n")
+        return mixed
+
+    return None
+
+
 # ── CLI ───────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
