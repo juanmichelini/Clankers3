@@ -101,19 +101,21 @@ impl ClankersBass {
         Float32Array::from(buf.as_slice())
     }
 
-    /// Trigger + render full tail in one call (like ClankersDrums.trigger_render).
+    /// Trigger + render full tail — isolated single voice, no shared state.
     pub fn trigger_render(&mut self, midi_note: u8, velocity: f32, cc_json: &str) -> Float32Array {
         let p = parse_bass_params(cc_json);
-        self.engine.trigger(midi_note, velocity, &p);
 
-        // Render up to 4 s, trim trailing silence
+        // Fresh voice each call — prevents cross-contamination when chords render
+        let mut voice = bass::BassVoice::new(0xba55);
+        voice.trigger(midi_note, velocity, &p);
+
         let max = 44100 * 4;
         let mut buf = vec![0.0f32; max];
-        self.engine.process(&mut buf, &p);
+        voice.process(&mut buf, &p);
 
         let end = buf.iter()
             .rposition(|&s| s.abs() > 1e-5)
-            .map(|i| (i + 441).min(max)) // keep a short tail
+            .map(|i| (i + 441).min(max))
             .unwrap_or(1024);
 
         Float32Array::from(&buf[..end])
@@ -163,14 +165,16 @@ impl ClankersBuchla {
         ClankersBuchla { engine: BuchlaEngine::new() }
     }
 
-    /// Trigger + render full tail. cc_json: '{"74":72,"20":37,"17":8,"19":5}'
+    /// Trigger + render full tail — isolated single voice.
     pub fn trigger_render(&mut self, midi_note: u8, velocity: f32, cc_json: &str) -> Float32Array {
         let p = parse_buchla_params(cc_json);
-        self.engine.trigger(midi_note, velocity, &p);
+
+        let mut voice = buchla::BuchlaVoice::new();
+        voice.trigger(midi_note, velocity, &p);
 
         let max = 44100 * 3;
         let mut buf = vec![0.0f32; max];
-        self.engine.process(&mut buf, &p);
+        voice.process(&mut buf, &p);
 
         let end = buf.iter()
             .rposition(|&s| s.abs() > 1e-5)
@@ -210,15 +214,16 @@ impl ClankersPads {
         let p    = parse_pads_params(cc_json);
         let hold = hold_samples as usize;
 
-        // Render: attack + hold + full release tail
+        // Render: attack + hold + full release tail — isolated voice, no shared state
         let release_tail = (p.amp_release * 44100.0) as usize + 4410;
         let total        = hold + release_tail;
 
         let mut buf_l = vec![0.0f32; total];
         let mut buf_r = vec![0.0f32; total];
 
-        self.engine.trigger(midi_note, velocity, hold, &p);
-        self.engine.process(&mut buf_l, &mut buf_r, &p);
+        let mut voice = pads::PadsVoice::new();
+        voice.trigger(midi_note, velocity, hold, &p);
+        voice.process(&mut buf_l, &mut buf_r, &p);
 
         // Trim trailing silence
         let end = buf_l.iter().zip(buf_r.iter())

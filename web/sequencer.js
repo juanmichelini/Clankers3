@@ -45,6 +45,14 @@ export class Sequencer {
   start() {
     if (!this.sheet) throw new Error('No sheet loaded');
     if (this._timer) return;
+
+    // Master gain — prevents clipping when multiple instruments sum
+    if (!this._masterGain) {
+      this._masterGain = this.ctx.createGain();
+      this._masterGain.gain.value = 0.28;
+      this._masterGain.connect(this.ctx.destination);
+    }
+
     this._startTime = this.ctx.currentTime + 0.05;
     this._nextBeat  = 0;
     this._stepIdx   = 0;
@@ -158,7 +166,7 @@ export class Sequencer {
     ab.copyToChannel(samples, 0);
     const src = this.ctx.createBufferSource();
     src.buffer = ab;
-    src.connect(this.ctx.destination);
+    src.connect(this._masterGain ?? this.ctx.destination);
     src.start(when);
   }
 
@@ -176,7 +184,7 @@ export class Sequencer {
     ab.copyToChannel(r, 1);
     const src = this.ctx.createBufferSource();
     src.buffer = ab;
-    src.connect(this.ctx.destination);
+    src.connect(this._masterGain ?? this.ctx.destination);
     src.start(when);
   }
 }

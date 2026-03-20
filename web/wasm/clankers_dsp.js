@@ -54,7 +54,7 @@ export class ClankersBass {
         wasm.clankersbass_trigger(this.__wbg_ptr, midi_note, velocity, ptr0, len0);
     }
     /**
-     * Trigger + render full tail in one call (like ClankersDrums.trigger_render).
+     * Trigger + render full tail — isolated single voice, no shared state.
      * @param {number} midi_note
      * @param {number} velocity
      * @param {string} cc_json
@@ -94,7 +94,7 @@ export class ClankersBuchla {
         return this;
     }
     /**
-     * Trigger + render full tail. cc_json: '{"74":72,"20":37,"17":8,"19":5}'
+     * Trigger + render full tail — isolated single voice.
      * @param {number} midi_note
      * @param {number} velocity
      * @param {string} cc_json

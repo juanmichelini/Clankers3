@@ -27,7 +27,7 @@ export class ClankersBass {
      */
     trigger(midi_note: number, velocity: number, cc_json: string): void;
     /**
-     * Trigger + render full tail in one call (like ClankersDrums.trigger_render).
+     * Trigger + render full tail — isolated single voice, no shared state.
      */
     trigger_render(midi_note: number, velocity: number, cc_json: string): Float32Array;
 }
@@ -44,7 +44,7 @@ export class ClankersBuchla {
     [Symbol.dispose](): void;
     constructor();
     /**
-     * Trigger + render full tail. cc_json: '{"74":72,"20":37,"17":8,"19":5}'
+     * Trigger + render full tail — isolated single voice.
      */
     trigger_render(midi_note: number, velocity: number, cc_json: string): Float32Array;
 }
