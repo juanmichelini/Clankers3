@@ -6,10 +6,10 @@ Each phoneme entry contains the DSP parameters needed to synthesize it:
   - Consonants: type-specific parameters (plosive bursts, fricative bands, etc.)
 
 Tuning notes (v2):
-  - Bandwidths widened significantly — narrow BW causes metallic ringing.
+  - Bandwidths widened significantly -- narrow BW causes metallic ringing.
     Real speech F1 BW ~ 80-130 Hz, F2 ~ 100-160 Hz, F3 ~ 130-200 Hz.
-  - F2 gain boosted — F2 is the most important cue for vowel identity.
-  - F4 (~3300 Hz) and F5 (~3700 Hz) added — roughly constant across vowels,
+  - F2 gain boosted -- F2 is the most important cue for vowel identity.
+  - F4 (~3300 Hz) and F5 (~3700 Hz) added -- roughly constant across vowels,
     they add vocal "presence" and "body" that was missing.
   - Nasal gains boosted to be audible.
   - Plosives given aspiration_ms for VOT (voice onset time).
@@ -167,7 +167,7 @@ FRICATIVES = {
     },
     "h": {
         "type": "fricative", "voiced": False,
-        # "h" is special — it should inherit formants from the NEXT vowel.
+        # "h" is special -- it should inherit formants from the NEXT vowel.
         # The engine handles this; the noise band here is just a fallback.
         "noise_lo": 500, "noise_hi": 5000,
         "amplitude": 0.15,

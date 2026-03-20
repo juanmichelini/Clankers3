@@ -7,3 +7,4 @@ pydub
 requests
 python-dotenv
 dawdreamer; platform_system=="Windows"
+flask

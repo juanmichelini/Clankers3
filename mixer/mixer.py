@@ -1,7 +1,7 @@
-# mixer/mixer.py — The Clankers 3
+# mixer/mixer.py -- The Clankers 3
 #
-# mix_section(tracks, sheet)     → per-track gain + EQ → blended AudioSegment
-# stitch_and_master(sections)    → crossfade concat → master compression → peak norm
+# mix_section(tracks, sheet)     -> per-track gain + EQ -> blended AudioSegment
+# stitch_and_master(sections)    -> crossfade concat -> master compression -> peak norm
 
 import numpy as np
 from pydub import AudioSegment
@@ -21,10 +21,10 @@ SR = 44100   # canonical sample rate for all mixing
 
 # Gain offsets in dB
 _GAINS_DB: dict[str, float] = {
-    "drums":      +2.0,   # punchy — kick needs to sit above the pad wash
-    "bass_sh101": -2.0,   # Pro-One bass — sole bass voice
-    "buchla":     -1.5,   # Buchla arps — bright and present, moderate pull
-    "hybrid":     -2.5,   # HybridSynth pads — sit behind, support from underneath
+    "drums":      +2.0,   # punchy -- kick needs to sit above the pad wash
+    "bass_sh101": -2.0,   # Pro-One bass -- sole bass voice
+    "buchla":     -1.5,   # Buchla arps -- bright and present, moderate pull
+    "hybrid":     -2.5,   # HybridSynth pads -- sit behind, support from underneath
     "sampler":     0.0,
     "voder":      +1.0,
 }
@@ -35,8 +35,8 @@ _DEFAULT_GAIN_DB = 0.0
 # Each entry is a list of filter specs:
 #   ("low_shelf",  freq_hz, gain_db)
 #   ("high_shelf", freq_hz, gain_db)
-#   ("low_cut",    freq_hz)           — 2-pole highpass
-#   ("high_cut",   freq_hz)           — 2-pole lowpass
+#   ("low_cut",    freq_hz)           -- 2-pole highpass
+#   ("high_cut",   freq_hz)           -- 2-pole lowpass
 #   ("peak",       freq_hz, gain_db, Q)
 _EQ: dict[str, list[tuple]] = {
     "drums": [
@@ -48,12 +48,12 @@ _EQ: dict[str, list[tuple]] = {
         ("high_cut",   5000),
     ],
     "buchla": [
-        ("low_cut",    120),           # light mud cut — arps don't sit in sub
+        ("low_cut",    120),           # light mud cut -- arps don't sit in sub
         ("peak",       3000, +2.0, 1.4),  # articulation and presence for arps
         ("high_shelf", 10000, +1.5),   # Buchla shimmer / air
     ],
     "hybrid": [
-        ("low_cut",    200),           # clear mud — granular pads don't need sub
+        ("low_cut",    200),           # clear mud -- granular pads don't need sub
         ("high_shelf", 8000,  +1.0),   # gentle shimmer (granular pads can be dark)
     ],
     "sampler": [
@@ -119,7 +119,7 @@ def _apply_eq(signal: np.ndarray, recipes: list[tuple]) -> np.ndarray:
                 out    = out + (g - 1.0) * band
 
         except Exception:
-            pass   # bad filter spec — skip silently
+            pass   # bad filter spec -- skip silently
 
     return out
 
@@ -127,7 +127,7 @@ def _apply_eq(signal: np.ndarray, recipes: list[tuple]) -> np.ndarray:
 # ── Normalise segment ─────────────────────────────────────────────────────
 
 def _to_mono_float(seg: AudioSegment) -> np.ndarray:
-    """AudioSegment → mono float64 numpy array normalised to ±1."""
+    """AudioSegment -> mono float64 numpy array normalised to ±1."""
     if seg.channels != 1:
         seg = seg.set_channels(1)
     if seg.frame_rate != SR:
@@ -138,7 +138,7 @@ def _to_mono_float(seg: AudioSegment) -> np.ndarray:
 
 
 def _from_float(arr: np.ndarray) -> AudioSegment:
-    """Float64 mono numpy array → AudioSegment."""
+    """Float64 mono numpy array -> AudioSegment."""
     peak = np.max(np.abs(arr))
     if peak > 1e-9:
         arr = arr / peak * 0.92
@@ -251,21 +251,59 @@ def mix_section(
     return _from_float(mix_buf)
 
 
+def _apply_tail_fade(segment: AudioSegment, fade_ms: int = 800) -> AudioSegment:
+    """
+    Apply a short linear fade-out to the last `fade_ms` of a segment.
+    Smooths the tail so crossfades don't blend hard transients at section boundaries.
+    """
+    if len(segment) <= fade_ms:
+        return segment
+    head = segment[:-fade_ms]
+    tail = segment[-fade_ms:].fade_out(fade_ms)
+    return head + tail
+
+
+def stitch_stem(
+    sections:     list[AudioSegment],
+    crossfade_ms: int = 2000,
+) -> AudioSegment:
+    """
+    Stitch one stem's sections with the same crossfade timing as stitch_and_master().
+    No master compression or normalisation -- leave dynamics intact for DAW mixdown.
+    Silent sections are included so all stems stay time-aligned with the full track.
+    """
+    if not sections:
+        return AudioSegment.silent(duration=1000, frame_rate=SR)
+
+    tail_fade_ms = min(crossfade_ms // 2, 1000)
+    faded = [_apply_tail_fade(s, tail_fade_ms) for s in sections]
+
+    full = faded[0]
+    for s in faded[1:]:
+        full = full.append(s, crossfade=crossfade_ms)
+    return full
+
+
 def stitch_and_master(
     sections:      list[AudioSegment],
-    crossfade_ms:  int   = 500,
+    crossfade_ms:  int   = 2000,
     target_db:     float = -0.1,
 ) -> AudioSegment:
     """
     Concatenate sections with crossfade, apply master bus compression,
     and peak-normalise to target_db.
+    crossfade_ms=2000 (~half a bar at 90 BPM) gives smooth section blends.
     """
     if not sections:
         raise ValueError("No sections to stitch.")
 
+    # Apply tail fades before crossfading so hard transients don't clash at joins
+    tail_fade_ms = min(crossfade_ms // 2, 1000)
+    faded = [_apply_tail_fade(s, tail_fade_ms) for s in sections]
+
     # Concatenate with crossfade
-    full = sections[0]
-    for s in sections[1:]:
+    full = faded[0]
+    for s in faded[1:]:
         full = full.append(s, crossfade=crossfade_ms)
 
     # Master bus: convert to float, compress, normalise

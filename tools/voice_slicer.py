@@ -28,7 +28,7 @@ def normalize_word(seg: AudioSegment) -> AudioSegment:
 
 
 def clean_token(text):
-    """Return (clean_text, has_punct) — strip punctuation and numbers, lowercase."""
+    """Return (clean_text, has_punct) -- strip punctuation and numbers, lowercase."""
     has_punct = any(c in PUNCT_FLUSH for c in text)
     clean = re.sub(r'[^a-z]', '', text.lower()).strip()
     return clean, has_punct
@@ -121,7 +121,7 @@ def slice_audio(input_file, output_dir, model_name="base", padding_ms=30):
 
             buffer.append(word_info)
 
-            # Rule 1 — punctuation boundary: flush immediately
+            # Rule 1 -- punctuation boundary: flush immediately
             if has_punct:
                 if len(buffer) >= 2:
                     if flush_phrase(buffer, audio, padding_ms, phrase_counts, output_dir):
@@ -129,7 +129,7 @@ def slice_audio(input_file, output_dir, model_name="base", padding_ms=30):
                 buffer = []
                 continue
 
-            # Rule 2 — hard word cap reached: split at TARGET_WORDS, keep rest
+            # Rule 2 -- hard word cap reached: split at TARGET_WORDS, keep rest
             if len(buffer) >= MAX_WORDS:
                 to_flush = buffer[:TARGET_WORDS]
                 buffer   = buffer[TARGET_WORDS:]

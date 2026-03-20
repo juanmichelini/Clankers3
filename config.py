@@ -1,6 +1,6 @@
-# config.py — The Clankers 3
+# config.py -- The Clankers 3
 # Inherits API keys + LLM settings from the_Clankers (sibling project).
-# Uses importlib to load by absolute path — avoids name collision with this file.
+# Uses importlib to load by absolute path -- avoids name collision with this file.
 
 import importlib.util
 from pathlib import Path
@@ -24,7 +24,7 @@ CLAUDE_RPM        = getattr(_orig, "CLAUDE_RPM",  200)
 CHATGPT_RPM       = getattr(_orig, "CHATGPT_RPM", 200)
 
 # ── Chatroom settings ──────────────────────────────────────────────────────
-# Shorter than the original — we negotiate one section at a time.
+# Shorter than the original -- we negotiate one section at a time.
 MAX_ROUNDS_PER_SESSION = 6
 
 # ── VST paths ──────────────────────────────────────────────────────────────
@@ -34,8 +34,8 @@ VST_PATHS: dict[str, str | None] = {
     "drums":        r"C:\Program Files\Common Files\VST3\Antigravity Drums.vst3",
     "harmony_lead": r"C:\Program Files\Common Files\VST3\Buchla Systems.vst3",
     "harmony_pad":  r"C:\Program Files\Common Files\VST3\HybridSynth.vst3",
-    "voder":        None,   # pure formant synthesis — no VST
-    "voice":        None,   # sample-based — no VST
+    "voder":        None,   # pure formant synthesis -- no VST
+    "voice":        None,   # sample-based -- no VST
 }
 
 # ── Paths ──────────────────────────────────────────────────────────────────
