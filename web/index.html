@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Clankers 3 — Drums Smoke Test</title>
+  <style>
+    body { background:#111; color:#eee; font-family:monospace; padding:2rem; }
+    h1   { color:#f90; margin-bottom:1rem; }
+    .grid { display:grid; grid-template-columns:repeat(4,1fr); gap:.5rem; max-width:480px; }
+    button {
+      background:#222; color:#eee; border:1px solid #444;
+      padding:.7rem; cursor:pointer; border-radius:4px; font-family:monospace; font-size:.85rem;
+    }
+    button:hover { background:#333; border-color:#f90; }
+    button:active { background:#f90; color:#111; }
+    #log { margin-top:1.5rem; font-size:.75rem; color:#888; white-space:pre; max-height:12rem; overflow-y:auto; }
+    .section { margin-top:1.5rem; }
+    label { display:block; margin:.3rem 0; font-size:.8rem; color:#aaa; }
+    input[type=range] { width:200px; vertical-align:middle; }
+    #seq-controls { display:flex; gap:.5rem; align-items:center; flex-wrap:wrap; }
+    #bpm-val { color:#f90; min-width:2.5rem; display:inline-block; }
+    textarea { background:#1a1a1a; color:#ccc; border:1px solid #333; width:100%; max-width:640px;
+               height:12rem; font-family:monospace; font-size:.75rem; padding:.5rem; box-sizing:border-box; }
+    .play-btn  { background:#1a3a1a; border-color:#3a8a3a; }
+    .play-btn:hover { background:#2a5a2a; border-color:#5aaa5a; }
+    .stop-btn  { background:#3a1a1a; border-color:#8a3a3a; }
+    .stop-btn:hover { background:#5a2a2a; border-color:#aa5a5a; }
+    /* Chat panel */
+    #chat-panel { margin-top:1.5rem; max-width:640px; }
+    #chat-panel h2 { color:#aaa; font-size:.9rem; margin-bottom:.5rem; }
+    #chat-messages { background:#0e0e0e; border:1px solid #2a2a2a; padding:.6rem;
+                     height:10rem; overflow-y:auto; font-size:.78rem; margin-bottom:.4rem; }
+    .msg-user { color:#f90; margin:.2rem 0; }
+    .msg-band { color:#7cf; margin:.2rem 0; }
+    .msg-sys  { color:#555; margin:.2rem 0; font-style:italic; }
+    #chat-row { display:flex; gap:.4rem; }
+    #chat-input { flex:1; background:#1a1a1a; color:#eee; border:1px solid #333;
+                  padding:.45rem .5rem; font-family:monospace; font-size:.8rem; }
+    #chat-send { padding:.45rem .9rem; white-space:nowrap; }
+    #brief-row { display:flex; gap:.4rem; margin-bottom:.5rem; }
+    #brief-input { flex:1; background:#1a1a1a; color:#eee; border:1px solid #333;
+                   padding:.45rem .5rem; font-family:monospace; font-size:.8rem; }
+    #btn-new-session { padding:.45rem .9rem; white-space:nowrap;
+                       background:#1a1a3a; border-color:#3a3a8a; }
+    #btn-new-session:hover { background:#2a2a5a; border-color:#5a5aaa; }
+  </style>
+</head>
+<body>
+<h1>Clankers 3 — Drums WASM</h1>
+
+<div class="section">
+  <div class="grid" id="pad-grid"></div>
+</div>
+
+<div class="section">
+  <label>Kick pitch  <input type="range" id="kick-pitch"  min="0" max="1" step=".01" value=".45"> <span id="kick-pitch-val">.45</span></label>
+  <label>Kick sweep  <input type="range" id="kick-sweep"  min="0" max="1" step=".01" value=".3">  <span id="kick-sweep-val">.3</span></label>
+  <label>Kick decay  <input type="range" id="kick-decay"  min="0" max="1" step=".01" value=".5">  <span id="kick-decay-val">.5</span></label>
+  <label>Snare pitch <input type="range" id="snare-pitch" min="0" max="1" step=".01" value=".4">  <span id="snare-pitch-val">.4</span></label>
+  <label>Snare decay <input type="range" id="snare-decay" min="0" max="1" step=".01" value=".5">  <span id="snare-decay-val">.5</span></label>
+  <label>HH cutoff   <input type="range" id="hh-cutoff"   min="0" max="1" step=".01" value=".6">  <span id="hh-cutoff-val">.6</span></label>
+</div>
+
+<div class="section">
+  <h2 style="color:#aaa;font-size:.9rem;margin-bottom:.5rem;">STEP SEQUENCER</h2>
+  <div id="seq-controls">
+    <button class="play-btn" id="btn-play">▶ PLAY</button>
+    <button class="stop-btn" id="btn-stop" disabled>■ STOP</button>
+    <label style="display:inline-flex;align-items:center;gap:.4rem;margin:0;">
+      BPM <input type="range" id="seq-bpm" min="60" max="200" step="1" value="120" style="width:120px;">
+      <span id="bpm-val">120</span>
+    </label>
+  </div>
+  <div style="margin-top:.7rem;">
+    <label style="color:#666;font-size:.72rem;margin-bottom:.25rem;">ClankerBoy JSON (edit &amp; reload)</label>
+    <textarea id="sheet-json">{
+  "bpm": 128,
+  "steps": [
+    { "d": 0.25, "tracks": [{ "t": 10, "n": [36], "v": 110 }] },
+    { "d": 0.25, "tracks": [] },
+    { "d": 0.25, "tracks": [{ "t": 10, "n": [42], "v": 72 }] },
+    { "d": 0.25, "tracks": [] },
+    { "d": 0.25, "tracks": [{ "t": 10, "n": [38], "v": 100 }] },
+    { "d": 0.25, "tracks": [{ "t": 10, "n": [42], "v": 60 }] },
+    { "d": 0.25, "tracks": [] },
+    { "d": 0.25, "tracks": [{ "t": 10, "n": [42], "v": 80 }] },
+    { "d": 0.25, "tracks": [{ "t": 10, "n": [36], "v": 105 }] },
+    { "d": 0.25, "tracks": [{ "t": 10, "n": [42], "v": 65 }] },
+    { "d": 0.25, "tracks": [{ "t": 10, "n": [42], "v": 58 }] },
+    { "d": 0.25, "tracks": [] },
+    { "d": 0.25, "tracks": [{ "t": 10, "n": [38], "v": 95 }] },
+    { "d": 0.25, "tracks": [{ "t": 10, "n": [42], "v": 70 }] },
+    { "d": 0.25, "tracks": [{ "t": 10, "n": [36], "v": 88 }] },
+    { "d": 0.25, "tracks": [{ "t": 10, "n": [46], "v": 85 }] }
+  ]
+}</textarea>
+  </div>
+</div>
+
+<div id="chat-panel">
+  <h2>BAND CHAT <span id="session-badge" style="color:#555;font-size:.75rem;"></span></h2>
+  <div id="brief-row">
+    <input id="brief-input" type="text" placeholder="Describe your track (e.g. dark techno, 130 bpm, heavy kick)" />
+    <button id="btn-new-session" class="play-btn">START SESSION</button>
+  </div>
+  <div id="chat-messages"><span class="msg-sys">Start a session to talk to the band.</span></div>
+  <div id="chat-row">
+    <input id="chat-input" type="text" placeholder="Talk to the band…" disabled />
+    <button id="chat-send" disabled>SEND</button>
+  </div>
+</div>
+
+<div id="log">Click a pad or press PLAY to start.</div>
+
+<script type="module">
+import init, { ClankersDrums } from './wasm/clankers_dsp.js';
+import { Sequencer } from './sequencer.js';
+
+const PADS = [
+  { label: 'KICK',   id: 0, color: '#c04000' },
+  { label: 'SNARE',  id: 1, color: '#006080' },
+  { label: 'HH CL', id: 2, color: '#404000' },
+  { label: 'HH OP', id: 3, color: '#303050' },
+  { label: 'TOM L', id: 4, color: '#204020' },
+  { label: 'TOM M', id: 5, color: '#204020' },
+  { label: 'TOM H', id: 6, color: '#204020' },
+];
+
+const log = (msg) => { document.getElementById('log').textContent += '\n' + msg; };
+
+// Sliders
+['kick-pitch','kick-sweep','kick-decay','snare-pitch','snare-decay','hh-cutoff'].forEach(id => {
+  const el = document.getElementById(id);
+  el.addEventListener('input', () => {
+    document.getElementById(id + '-val').textContent = (+el.value).toFixed(2);
+  });
+});
+const sv = (id) => +document.getElementById(id).value;
+
+// Build pad buttons
+const grid = document.getElementById('pad-grid');
+PADS.forEach(pad => {
+  const btn = document.createElement('button');
+  btn.textContent = pad.label;
+  btn.style.borderTopColor = pad.color;
+  btn.addEventListener('click', () => triggerPad(pad.id));
+  grid.appendChild(btn);
+});
+
+// ─── Audio state ──────────────────────────────────────────────────────────────
+let ctx = null;
+let engine = null;
+
+async function ensureReady() {
+  if (engine) {
+    if (ctx.state === 'suspended') await ctx.resume();
+    return;
+  }
+
+  ctx = new AudioContext({ sampleRate: 44100 });
+  log('AudioContext @ ' + ctx.sampleRate + ' Hz');
+
+  await init();   // fetches clankers_dsp_bg.wasm automatically
+  const seed = (Math.random() * 0xffffffff) >>> 0;
+  engine = new ClankersDrums(seed);
+  log('WASM engine ready — click a pad!');
+}
+
+function triggerPad(voiceId) {
+  ensureReady().then(() => {
+    let p0 = 0.5, p1 = 0.5, p2 = 0.5;
+    if (voiceId === 0) { p0 = sv('kick-pitch'); p1 = sv('kick-sweep'); p2 = sv('kick-decay'); }
+    if (voiceId === 1) { p0 = sv('snare-pitch'); p1 = sv('snare-decay'); p2 = 0.2; }
+    if (voiceId === 2 || voiceId === 3) { p0 = sv('hh-cutoff') * 0.4; p1 = sv('hh-cutoff'); p2 = 0.1; }
+
+    const samples = engine.trigger_render(voiceId, 0.85, p0, p1, p2);
+    const audioBuffer = ctx.createBuffer(1, samples.length, 44100);
+    audioBuffer.copyToChannel(samples, 0);
+
+    const src = ctx.createBufferSource();
+    src.buffer = audioBuffer;
+    src.connect(ctx.destination);
+    src.start();
+
+    log(`voice=${voiceId} samples=${samples.length} p0=${p0.toFixed(2)} p1=${p1.toFixed(2)} p2=${p2.toFixed(2)}`);
+  }).catch(e => log('Error: ' + e));
+}
+
+// ─── Sequencer ────────────────────────────────────────────────────────────────
+let seq = null;
+
+function getSeq() {
+  if (!engine) throw new Error('Engine not ready');
+  if (!seq) seq = new Sequencer(ctx, engine);
+  return seq;
+}
+
+document.getElementById('btn-play').addEventListener('click', async () => {
+  try {
+    await ensureReady();
+    const sheet = JSON.parse(document.getElementById('sheet-json').value);
+    sheet.bpm   = +document.getElementById('seq-bpm').value;
+
+    const s = getSeq();
+    s.stop();
+    s.load(sheet);
+    s.start();
+
+    document.getElementById('btn-play').disabled = true;
+    document.getElementById('btn-stop').disabled = false;
+    log(`[seq] started @ ${sheet.bpm} BPM — ${(sheet.steps ?? []).length} steps`);
+  } catch (e) {
+    log('Seq error: ' + e);
+  }
+});
+
+document.getElementById('btn-stop').addEventListener('click', () => {
+  if (seq) seq.stop();
+  document.getElementById('btn-play').disabled = false;
+  document.getElementById('btn-stop').disabled = true;
+  log('[seq] stopped');
+});
+
+document.getElementById('seq-bpm').addEventListener('input', function () {
+  document.getElementById('bpm-val').textContent = this.value;
+  if (seq && seq.isPlaying) seq._bpm = +this.value;
+});
+
+// ─── Band Chat ─────────────────────────────────────────────────────────────
+const API = 'http://localhost:8000';
+let sessionId = null;
+
+const chatMsgs  = document.getElementById('chat-messages');
+const chatInput = document.getElementById('chat-input');
+const chatSend  = document.getElementById('chat-send');
+
+function chatAppend(text, cls) {
+  const div = document.createElement('div');
+  div.className = cls;
+  div.textContent = text;
+  chatMsgs.appendChild(div);
+  chatMsgs.scrollTop = chatMsgs.scrollHeight;
+}
+
+function sheetToSequencer(sheet) {
+  try {
+    // Find drums agent steps if present (agents.drums.pattern), else use top-level steps
+    let steps = sheet.steps;
+    if (!steps && sheet.agents?.drums?.pattern) {
+      // Convert flat 16-step velocity array → ClankerBoy steps
+      steps = sheet.agents.drums.pattern.map((v, i) => {
+        if (!v) return { d: 0.25, tracks: [] };
+        // Alternate kick/snare at beat 1&3 / 2&4 (rough default)
+        const note = (i % 8 === 0 || i % 8 === 4) ? 36 : (i % 8 === 2 || i % 8 === 6) ? 38 : 42;
+        return { d: 0.25, tracks: [{ t: 10, n: [note], v: Math.round(v * 127) }] };
+      });
+    }
+    if (!steps) return;
+
+    const newSheet = { bpm: sheet.bpm ?? 120, steps };
+    document.getElementById('sheet-json').value = JSON.stringify(newSheet, null, 2);
+    document.getElementById('seq-bpm').value = newSheet.bpm;
+    document.getElementById('bpm-val').textContent = newSheet.bpm;
+    chatAppend(`[sheet updated — ${steps.length} steps @ ${newSheet.bpm} BPM]`, 'msg-sys');
+  } catch (e) {
+    chatAppend('[sheet parse error: ' + e + ']', 'msg-sys');
+  }
+}
+
+document.getElementById('btn-new-session').addEventListener('click', async () => {
+  const brief = document.getElementById('brief-input').value.trim();
+  if (!brief) { chatAppend('Enter a track brief first.', 'msg-sys'); return; }
+
+  chatAppend('Starting session…', 'msg-sys');
+  document.getElementById('btn-new-session').disabled = true;
+
+  try {
+    const res  = await fetch(`${API}/session/new`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ brief, section: 'verse1', solo: true }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+
+    sessionId = data.session_id;
+    document.getElementById('session-badge').textContent = `[${sessionId.slice(0,8)}]`;
+    chatInput.disabled = false;
+    chatSend.disabled  = false;
+    chatAppend(`Session started. The band is ready.`, 'msg-sys');
+    sheetToSequencer(data.sheet);
+  } catch (e) {
+    chatAppend('Error: ' + e + ' — is the API running? (uvicorn api.main:app --port 8000)', 'msg-sys');
+  } finally {
+    document.getElementById('btn-new-session').disabled = false;
+  }
+});
+
+async function sendChat() {
+  const msg = chatInput.value.trim();
+  if (!msg || !sessionId) return;
+  chatInput.value = '';
+  chatAppend('You: ' + msg, 'msg-user');
+  chatSend.disabled = true;
+
+  try {
+    const res  = await fetch(`${API}/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id: sessionId, message: msg }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    chatAppend(`${data.companion}: ${data.reply}`, 'msg-band');
+    sheetToSequencer(data.sheet);
+  } catch (e) {
+    chatAppend('Error: ' + e, 'msg-sys');
+  } finally {
+    chatSend.disabled = false;
+    chatInput.focus();
+  }
+}
+
+chatSend.addEventListener('click', sendChat);
+chatInput.addEventListener('keydown', e => { if (e.key === 'Enter') sendChat(); });
+</script>
+</body>
+</html>

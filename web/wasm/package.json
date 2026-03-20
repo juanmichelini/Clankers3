@@ -1,0 +1,15 @@
+{
+  "name": "clankers_dsp",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "clankers_dsp_bg.wasm",
+    "clankers_dsp.js",
+    "clankers_dsp.d.ts"
+  ],
+  "main": "clankers_dsp.js",
+  "types": "clankers_dsp.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
