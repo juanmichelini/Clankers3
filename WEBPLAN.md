@@ -437,5 +437,276 @@ For each:
 
 ---
 
+---
+
+## 14. Genre-Reactive Visual Identity
+
+The page and companions change their entire look based on the style of music being made. The Music Sheet's `mood` field, combined with the user's brief, is mapped to a `genre_tag` by the Conductor. This tag drives two visual layers: the **page theme** and the **companion skins**.
+
+### 14.1 Genre Tag
+
+The Conductor derives a `genre_tag` from the brief and mood when a session starts (or when a major style shift occurs via chat). It is stored in the Music Sheet:
+
+```json
+{
+  "genre_tag": "punk_synthwave",
+  "mood": "dark, cold, aggressive",
+  ...
+}
+```
+
+Supported genre families:
+
+| `genre_tag` | Example briefs |
+|---|---|
+| `punk_synthwave` | "dark industrial EBM", "cold acid punk", "neon-soaked aggression" |
+| `jazz` | "late-night jazz club", "cool bossa", "bebop with electronics" |
+| `ambient` | "drone, floating", "slow shimmer", "meditative pads" |
+| `industrial_ebm` | "mechanical, brutal, body music", "factory floor percussion" |
+| `acid_house` | "acid rave", "four-to-the-floor party", "303 squelch party" |
+| `classical` | "orchestral tension", "neo-classical electronics", "chamber synth" |
+| `reggae_dub` | "heavy dub space", "roots reggae", "echoed bass and percussion" |
+| `hip_hop` | "lo-fi boom bap", "trap synth", "dusty samples and 808s" |
+
+### 14.2 Page Themes
+
+Each genre tag maps to a CSS theme class applied to `<body>`. Themes control:
+
+- Background color, texture, and animated overlays
+- Accent colors (neon, warm, cool, muted)
+- Typography weight and letter-spacing
+- Border/divider style (hard grid, soft blur, organic)
+- Subtle background animations (scanlines, grain, floating particles, slow fog)
+
+```css
+/* web/themes/punk-synthwave.css */
+body.punk-synthwave {
+  --bg: #0a0010;
+  --surface: #12001e;
+  --accent-1: #ff2d78;    /* hot pink neon */
+  --accent-2: #00f5ff;    /* cyan neon */
+  --text: #e0e0ff;
+  --font-weight: 900;
+  --border: 2px solid var(--accent-1);
+  background-image: url('textures/scanlines.svg');
+  animation: scanline-scroll 8s linear infinite;
+}
+
+body.jazz {
+  --bg: #1a1008;
+  --surface: #261808;
+  --accent-1: #d4a843;    /* warm amber */
+  --accent-2: #8fbcbb;    /* cool teal */
+  --text: #f0e6d0;
+  --font-weight: 400;
+  --border: 1px solid rgba(212, 168, 67, 0.4);
+  background-image: url('textures/grain.svg');
+}
+
+body.ambient {
+  --bg: #080c14;
+  --surface: #0c1020;
+  --accent-1: #7aa2d4;    /* soft blue */
+  --accent-2: #a0c4a0;    /* muted green */
+  --font-weight: 300;
+  --border: 1px solid rgba(122, 162, 212, 0.2);
+  /* slow radial gradient pulse animation */
+}
+```
+
+Theme files live in `web/themes/`. The page transitions on genre change via a short crossfade (300ms opacity on the `<body>` background and a companion "wardrobe swap" animation).
+
+### 14.3 Companion Skins
+
+Each companion has a base visual design (SVG or CSS illustration) with swappable **clothing/accessory layers** per genre. The base personality and face stay recognizable — only the look changes.
+
+| Companion | Base look | punk_synthwave | jazz | ambient | industrial_ebm | acid_house |
+|---|---|---|---|---|---|---|
+| The Bassist | Laid-back, warm | Fingerless gloves, leather jacket, neon bass | Low-lit bar slouch, upright bass shadow | Barefoot, loose shirt, eyes half-closed | Hard hat, boots, heavy instrument rig | Bucket hat, glowstick necklace |
+| The Drummer | Compact, energetic | Mohawk sprite, torn tee | Brushes visible, beret | Soft mallets, calm posture | Industrial goggles, rivet-gun drumsticks | Massive sunglasses, hands blurred |
+| Keys | Opinionated, gesturing | Synth worn like a guitar, cyber visor | Turtleneck, cigarette holder, bar stool | Flowing sleeves, softly glowing keys | Welding mask pushed up, heavy gloves | Oversized smiley tee, keyboard like a surfboard |
+| The Voice | Mysterious, minimal | Neon half-mask, face obscured | Vintage microphone, spotlight glow | Facing slightly away, half in shadow | Industrial respirator partially removed | Whistle around neck, wide eyes |
+| The Conductor | Formal but warm | Ripped tuxedo jacket, synth clipboard | Proper conductor's baton, tails | No baton, just gentle hand gestures | Clipboard replaced by punch-card printout | Clipboard is a glowstick wand |
+
+Skins are implemented as layered SVGs or CSS classes swapped on the companion tile element. Each companion tile has:
+
+```html
+<div class="companion-tile" data-agent="drums" data-genre="punk_synthwave">
+  <div class="companion-sprite">
+    <img class="base" src="sprites/drums/base.svg" />
+    <img class="costume" src="sprites/drums/punk_synthwave.svg" />
+    <img class="accessory" src="sprites/drums/punk_synthwave_accessory.svg" />
+  </div>
+  <span class="companion-name">The Drummer</span>
+  <span class="companion-state">in band</span>
+</div>
+```
+
+### 14.4 Personality Tone Shifts
+
+The companion personalities are fixed, but their *register* shifts with the genre. The backend injects the genre tag into the system prompt for each companion's LLM call:
+
+```python
+GENRE_TONE = {
+    "punk_synthwave": "You're in punk mode. Be blunt, a little aggressive, impatient — but still helpful and never mean.",
+    "jazz": "You're in jazz mode. Be measured, cool, slightly mysterious. Economical with words.",
+    "ambient": "You're in ambient mode. Slow down. Be gentle, spacious, almost sleepy. Long pauses are fine.",
+    "industrial_ebm": "You're in industrial mode. Mechanical, precise, serious. Every word counts.",
+    "acid_house": "You're in acid house mode. Enthusiastic, chaotic, fast. Lots of energy.",
+    "classical": "You're in classical mode. Formal, precise, slightly imperious. But kind.",
+}
+```
+
+Examples of the same companion across genres:
+
+> **The Drummer on kick drum, punk_synthwave:**
+> "That kick is too soft. Punch it up. Decay shorter. More pitch drop."
+
+> **The Drummer on kick drum, jazz:**
+> "Let's keep the kick understated — just enough to anchor the ride."
+
+> **The Drummer on kick drum, ambient:**
+> "Maybe... no kick at all? Or very far away. Like a heartbeat you almost imagine."
+
+### 14.5 Genre Transitions
+
+When a chat message signals a major style shift ("make it more jazzy", "go darker"), the Conductor updates `genre_tag` in the sheet. The frontend detects the change in the sheet diff and:
+
+1. Fades the page background to the new theme (300ms)
+2. Triggers companion "wardrobe swap" animation (sprites fade/spin briefly)
+3. The chat log shows a small visual separator: *"— style shift: jazz —"*
+
+---
+
+## 15. Schooling Mode
+
+Every companion can switch into a teacher role, explaining music theory, instrument design, and synthesis concepts in real time. The goal is that someone with zero music production knowledge can build a track while learning exactly what every parameter does and why it sounds the way it does.
+
+### 15.1 Triggering School Mode
+
+Three ways to activate:
+
+1. **Global toggle** — A `?` button in the UI header enables School Mode globally. All companions become narrators of their own decisions.
+2. **Per-companion** — A small `?` badge on each companion tile activates their teaching mode individually. Only that companion explains their work.
+3. **Natural language in chat** — Companions recognise and respond to:
+   - "How does that work?"
+   - "Teach me about [topic]"
+   - "Why did you do that?"
+   - "What is [parameter]?"
+   - "Explain [synthesis concept]"
+
+### 15.2 What Each Companion Teaches
+
+**The Drummer** — Rhythm and drum synthesis:
+- What a 16-step grid is and how it maps to bars and beats
+- Swing: what it does, why 54% feels groove-ier than 50%
+- How a kick drum is synthesised (sine chirp + noise burst + pitch envelope)
+- Snare: tuned noise + transient, why "snappy" controls the high-frequency tail
+- Hi-hat: filtered noise, why open vs closed is just decay length
+- Polyrhythm: two patterns of different lengths running simultaneously
+- The difference between four-on-the-floor, breakbeat, and half-time
+
+**The Bassist** — Basslines and filter synthesis:
+- Scale degrees: why bass uses degrees (1, 3, 5) instead of note names
+- Octave register: why bass stays in octave 1–2
+- What portamento (slide) does acoustically and why it sounds smooth
+- Filter cutoff: the "curtain" metaphor — what frequencies pass through at each value
+- Resonance: why a peak at the cutoff frequency creates that acid squelch
+- Pulse width: how a square wave changes shape and why wider sounds thicker
+- Sub oscillator: adding a fundamental one octave below for weight
+
+**Keys** — Harmony and synthesis:
+- Chord construction: root, third, fifth, seventh — why they work together
+- Tension and release: diminished/augmented chords vs resolved chords
+- Why a slow attack makes a pad feel like it's "fading in from nothing"
+- FM synthesis: the carrier/modulator relationship, FM index as brightness
+- Wavefolding: what happens when you push a waveform past its limits (soft clipping vs folding)
+- Granular synthesis: reading tiny frozen grains of a sound out of order and cross-fading them
+- What "cloud density" controls: how many grains per second are playing
+
+**The Voice** — Formant synthesis and the human voice:
+- What a formant is: a resonant peak in the vocal tract
+- How vowels differ: "ah" vs "ee" is F1/F2 frequency shift, not pitch
+- Glottal pulse: the vibration of the vocal folds is the source; the vocal tract shapes it
+- Coarticulation: why the mouth starts moving for the next phoneme before the current one ends
+- What "fundamental_hz" controls: pitch, not vowel colour
+- Why whispering works: noise source instead of glottal pulse, same formants
+- The difference between voiced (b, d, z) and unvoiced (p, t, s) consonants
+
+**The Conductor** — Music structure and production:
+- What a "section" is and why tracks change over time (verse/chorus/bridge)
+- Energy arc: why most tracks build toward a peak and release
+- Why the Music Sheet has a `globalNotes` field: inter-agent coordination ("bass and kick lock on beat 1")
+- What EQ does: frequency-selective volume — cut vs boost, shelf vs bell
+- Compression: why loud moments get quieter and quiet ones get louder
+- Why mastering chains work: saturation, limiting, loudness perception
+
+### 15.3 Real-Time Annotations
+
+In School Mode, when a companion makes a change, their chat reply includes a brief explanation appended after the musical decision:
+
+```
+[Keys] → I've widened the chord voicing and pulled the pad cutoff down to 0.3.
+
+  📖 The cutoff (0.3) removes frequencies above roughly 900 Hz, leaving only the
+  warm low-mid body of the pad. A low cutoff on a slow-attack pad creates that
+  "emerging from fog" effect — you hear the fundamental before any brightness appears.
+```
+
+The annotation is visually distinguished (lighter color, slightly smaller text, a book emoji prefix).
+
+### 15.4 Interactive Lessons
+
+Companions can run short structured lessons triggered by the user:
+
+- `"Teach me about kick drums"` → The Drummer walks through kick synthesis step by step, adjusting the kick parameters live as they explain each stage
+- `"Show me what resonance does"` → The Bassist sweeps the resonance parameter slowly while explaining the effect
+- `"What is an arpeggio?"` → Keys sets up a simple chord and plays it first block, then arpeggiated, explaining the difference
+- `"How do vowels work?"` → The Voice cycles through ah / ee / oh while explaining which formants shifted and why
+
+Lessons are structured as a short sequence of sheet mutations + companion narration messages, delivered at a reading pace (one step every few seconds). The music plays live throughout.
+
+### 15.5 Backend Support
+
+School Mode adds a flag to the session and chat API:
+
+```json
+POST /session/new
+{
+  "brief": "...",
+  "school_mode": true,
+  "school_focus": "drums"   // optional: only that companion teaches
+}
+
+POST /chat
+{
+  "session_id": "...",
+  "message": "teach me about the filter",
+  "school_mode": true
+}
+```
+
+The backend injects a teaching instruction into the system prompt when school mode is active:
+
+```python
+SCHOOL_MODE_SUFFIX = """
+When school_mode is active, append a brief educational note after your musical decision.
+Use plain language. Explain ONE concept per response. Max 3 sentences.
+Prefix the note with 📖.
+"""
+```
+
+### 15.6 Visual Support in School Mode
+
+- The sheet-view panel (optional debug panel in Section 8) becomes a **live annotated parameter display**: every field shows its current value, its human-readable range, and a one-line description of what it does.
+- Active parameters (ones that just changed) highlight briefly with a pulse animation.
+- A mini waveform or spectrum display appears per companion, showing the raw output of their synth engine in real time.
+
+### 15.7 Genre Skin in School Mode
+
+School Mode companions wear a slightly different visual: a pair of small glasses appears on each sprite (a subtle "teacher mode" accessory), and the page gains a thin chalkboard-texture overlay in the background while the genre theme remains active underneath. Removing School Mode removes the glasses and chalkboard overlay.
+
+---
+
 *Last updated: 2026-03-20*
-*Branch: `claude/hay-chat-integration-bSrf2`*
+*Branch: `claude/clankers3-setup-8Wwqw`*
