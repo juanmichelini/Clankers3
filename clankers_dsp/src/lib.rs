@@ -1,12 +1,17 @@
 mod bass;
+mod buchla;
 mod drums;
 mod envelope;
+mod lpg;
 mod ms20_filter;
 mod oscillator;
 mod rng;
 mod tpt_ladder;
+mod vactrol;
+mod wavefolder;
 
 use bass::{BassEngine, BassParams};
+use buchla::{BuchlaEngine, BuchlaParams};
 use drums::DrumsEngine;
 use js_sys::Float32Array;
 use wasm_bindgen::prelude::*;
@@ -128,6 +133,61 @@ fn parse_bass_params(cc_json: &str) -> BassParams {
             23 => p.flt_decay      = 0.01  + n * 0.99,
             18 => p.detune_cents   = (n * 100.0) - 50.0,
             5  => p.glide_time     = n * 0.5,
+            _  => {}
+        }
+    }
+    p
+}
+
+// ── Buchla ────────────────────────────────────────────────────────────────────
+
+/// Buchla 259/292 — percussive LPG arp with FM + wavefolding (8 voices).
+///
+/// ClankerBoy CC map (t:1):
+///   CC74 cutoff  CC71 resonance  CC20 wavefold  CC17 fm_depth
+///   CC18 fm_index  CC19 env_decay  CC16 volume
+#[wasm_bindgen]
+pub struct ClankersBuchla {
+    engine: BuchlaEngine,
+}
+
+#[wasm_bindgen]
+impl ClankersBuchla {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> ClankersBuchla {
+        ClankersBuchla { engine: BuchlaEngine::new() }
+    }
+
+    /// Trigger + render full tail. cc_json: '{"74":72,"20":37,"17":8,"19":5}'
+    pub fn trigger_render(&mut self, midi_note: u8, velocity: f32, cc_json: &str) -> Float32Array {
+        let p = parse_buchla_params(cc_json);
+        self.engine.trigger(midi_note, velocity, &p);
+
+        let max = 44100 * 3;
+        let mut buf = vec![0.0f32; max];
+        self.engine.process(&mut buf, &p);
+
+        let end = buf.iter()
+            .rposition(|&s| s.abs() > 1e-5)
+            .map(|i| (i + 441).min(max))
+            .unwrap_or(1024);
+
+        Float32Array::from(&buf[..end])
+    }
+}
+
+fn parse_buchla_params(cc_json: &str) -> BuchlaParams {
+    let mut p = BuchlaParams::default();
+    for (key, val) in parse_cc_map(cc_json) {
+        let n = val / 127.0;
+        match key {
+            74 => p.cutoff_norm = n,
+            71 => p.resonance   = n * 0.85,
+            20 => p.fold_amount = n,
+            17 => p.fm_depth    = n,
+            18 => p.fm_index    = n,
+            19 => p.decay_s     = 0.005 + n * 0.795,  // 5 ms .. 800 ms
+            16 => p.volume      = n,
             _  => {}
         }
     }

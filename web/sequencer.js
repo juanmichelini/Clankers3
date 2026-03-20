@@ -19,8 +19,9 @@ const INTERVAL_MS  = 25;
 export class Sequencer {
   constructor(ctx, engines = {}) {
     this.ctx    = ctx;
-    this.drums  = engines.drums ?? null;
-    this.bass   = engines.bass  ?? null;
+    this.drums  = engines.drums  ?? null;
+    this.bass   = engines.bass   ?? null;
+    this.buchla = engines.buchla ?? null;
     this.sheet  = null;
     this._timer = null;
 
@@ -79,10 +80,15 @@ export class Sequencer {
 
         if (track.t === 2 && this.bass) {
           for (const note of notes) {
-            const ccJson = JSON.stringify(
-              Object.fromEntries(Object.entries(cc).map(([k, v]) => [k, v]))
-            );
+            const ccJson = JSON.stringify(cc);
             events.push({ beatTime: beat, type: 'bass', midiNote: note, velocity: vel, ccJson });
+          }
+        }
+
+        if (track.t === 1 && this.buchla) {
+          for (const note of notes) {
+            const ccJson = JSON.stringify(cc);
+            events.push({ beatTime: beat, type: 'buchla', midiNote: note, velocity: vel, ccJson });
           }
         }
       }
@@ -125,6 +131,9 @@ export class Sequencer {
       this._playBuffer(samples, when);
     } else if (ev.type === 'bass') {
       const samples = this.bass.trigger_render(ev.midiNote, ev.velocity, ev.ccJson);
+      this._playBuffer(samples, when);
+    } else if (ev.type === 'buchla') {
+      const samples = this.buchla.trigger_render(ev.midiNote, ev.velocity, ev.ccJson);
       this._playBuffer(samples, when);
     }
   }

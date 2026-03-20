@@ -33,6 +33,23 @@ export class ClankersBass {
 }
 
 /**
+ * Buchla 259/292 — percussive LPG arp with FM + wavefolding (8 voices).
+ *
+ * ClankerBoy CC map (t:1):
+ *   CC74 cutoff  CC71 resonance  CC20 wavefold  CC17 fm_depth
+ *   CC18 fm_index  CC19 env_decay  CC16 volume
+ */
+export class ClankersBuchla {
+    free(): void;
+    [Symbol.dispose](): void;
+    constructor();
+    /**
+     * Trigger + render full tail. cc_json: '{"74":72,"20":37,"17":8,"19":5}'
+     */
+    trigger_render(midi_note: number, velocity: number, cc_json: string): Float32Array;
+}
+
+/**
  * Voice IDs:  0=Kick  1=Snare  2=HiHat Closed  3=HiHat Open
  *             4=Tom L  5=Tom M  6=Tom H
  *
@@ -57,11 +74,14 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly __wbg_clankersbass_free: (a: number, b: number) => void;
+    readonly __wbg_clankersbuchla_free: (a: number, b: number) => void;
     readonly __wbg_clankersdrums_free: (a: number, b: number) => void;
     readonly clankersbass_new: (a: number) => number;
     readonly clankersbass_render: (a: number, b: number) => any;
     readonly clankersbass_trigger: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly clankersbass_trigger_render: (a: number, b: number, c: number, d: number, e: number) => any;
+    readonly clankersbuchla_new: () => number;
+    readonly clankersbuchla_trigger_render: (a: number, b: number, c: number, d: number, e: number) => any;
     readonly clankersdrums_new: (a: number) => number;
     readonly clankersdrums_trigger_render: (a: number, b: number, c: number, d: number, e: number, f: number) => any;
     readonly __wbindgen_externrefs: WebAssembly.Table;

@@ -70,6 +70,46 @@ export class ClankersBass {
 if (Symbol.dispose) ClankersBass.prototype[Symbol.dispose] = ClankersBass.prototype.free;
 
 /**
+ * Buchla 259/292 — percussive LPG arp with FM + wavefolding (8 voices).
+ *
+ * ClankerBoy CC map (t:1):
+ *   CC74 cutoff  CC71 resonance  CC20 wavefold  CC17 fm_depth
+ *   CC18 fm_index  CC19 env_decay  CC16 volume
+ */
+export class ClankersBuchla {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        ClankersBuchlaFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_clankersbuchla_free(ptr, 0);
+    }
+    constructor() {
+        const ret = wasm.clankersbuchla_new();
+        this.__wbg_ptr = ret >>> 0;
+        ClankersBuchlaFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * Trigger + render full tail. cc_json: '{"74":72,"20":37,"17":8,"19":5}'
+     * @param {number} midi_note
+     * @param {number} velocity
+     * @param {string} cc_json
+     * @returns {Float32Array}
+     */
+    trigger_render(midi_note, velocity, cc_json) {
+        const ptr0 = passStringToWasm0(cc_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.clankersbuchla_trigger_render(this.__wbg_ptr, midi_note, velocity, ptr0, len0);
+        return ret;
+    }
+}
+if (Symbol.dispose) ClankersBuchla.prototype[Symbol.dispose] = ClankersBuchla.prototype.free;
+
+/**
  * Voice IDs:  0=Kick  1=Snare  2=HiHat Closed  3=HiHat Open
  *             4=Tom L  5=Tom M  6=Tom H
  *
@@ -144,6 +184,9 @@ function __wbg_get_imports() {
 const ClankersBassFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_clankersbass_free(ptr >>> 0, 1));
+const ClankersBuchlaFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_clankersbuchla_free(ptr >>> 0, 1));
 const ClankersDrumsFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_clankersdrums_free(ptr >>> 0, 1));
