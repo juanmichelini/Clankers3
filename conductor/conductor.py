@@ -1,12 +1,12 @@
-# conductor/conductor.py — The Clankers 3
+# conductor/conductor.py -- The Clankers 3
 #
 # Full pipeline:
 #   run_track(brief, arc, out_dir)
-#     1. Chatroom negotiates verse1 → Music Sheet JSON
+#     1. Chatroom negotiates verse1 -> Music Sheet JSON
 #     2. For each subsequent section: evolve() mutates the sheet
 #     3. run_session() fires all agents in parallel (DawDreamer or numpy)
 #     4. mixer.mix_section() balances + EQs each section
-#     5. mixer.stitch_and_master() concatenates + compresses → full_track.wav
+#     5. mixer.stitch_and_master() concatenates + compresses -> full_track.wav
 
 import io
 import os
@@ -76,8 +76,11 @@ class _AgentStream(io.TextIOBase):
 
 DEFAULT_ARC = ["verse1", "instrumental", "verse2", "bridge", "verse3", "outro"]
 
+# All stem names that can appear in a run_session() result
+ALL_STEMS = ["sampler", "bass_sh101", "drums", "buchla", "hybrid", "voder"]
+
 OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
-EVOLVE_MODEL   = "gpt-4o"   # stable model for evolve() — independent of config.CHATGPT_MODEL
+EVOLVE_MODEL   = "gpt-4o"   # stable model for evolve() -- independent of config.CHATGPT_MODEL
 
 # Canonical tension curve per section name.
 # Agents use this to scale density, velocity, fill probability, etc.
@@ -95,31 +98,39 @@ _SECTION_TENSION: dict[str, float] = {
 _EVOLVE_SYSTEM = """You are the music evolution engine for The Clankers 3.
 You receive a Music Sheet JSON and a target section name.
 Return a mutated version that fits the new section's energy and arc.
-Preserve title and bpm (bpm is ALWAYS locked — never change it).
+Preserve title and bpm (bpm is ALWAYS locked -- never change it).
 Key can modulate at bridge only.
 
 Section arc guidance:
-  verse1       — full band enters, establish core groove, sampler + voder introduce themes
-  instrumental — sampler goes inactive, instruments step forward, bass and drums develop
-  verse2       — sampler returns, revisit theme with twist, fuller texture
-  bridge       — hard contrast: strip back or flip density, harmonic surprise, key can shift
-  verse3       — climax: all agents fully active, maximum density, voder most expressive
-  outro        — dissolution, elements drop one by one, density falling, voder last to leave
+  verse1       -- full band enters, establish core groove, sampler + voder introduce themes
+  instrumental -- sampler goes inactive, instruments step forward, bass and drums develop
+  verse2       -- sampler returns, revisit theme with twist, fuller texture
+  bridge       -- hard contrast: strip back or flip density, harmonic surprise, key can shift
+  verse3       -- climax: all agents fully active, maximum density, voder most expressive
+  outro        -- dissolution, elements drop one by one, density falling, voder last to leave
 
 The band has ONE bass voice: bass_sh101 (Pro-One style). There is no bass303.
 Mutate: bars, mood, density, sampleHints, patterns, active agents.
-Do NOT change bpm — it is locked for the entire track.
+Do NOT change bpm -- it is locked for the entire track.
 Always rewrite globalNotes to reflect new inter-agent coordination for this section.
 
-CRITICAL — always include these fields in the mutated sheet:
+CRITICAL -- always include these fields in the mutated sheet:
+  bars: target 16 bars per section for a developed, longer composition.
+    Outro may use 8 bars to resolve quickly. Bridge may use 8-12 bars for contrast.
   tension (0.0-1.0): section energy driver. verse1≈0.3, instrumental≈0.45, verse2≈0.5,
     bridge≈0.75, verse3≈0.85, outro≈0.2
-  harmonic_rhythm: "slow"|"medium"|"fast"|"mixed" — rate of chord changes.
+  harmonic_rhythm: "slow"|"medium"|"fast"|"mixed" -- rate of chord changes.
     Match to tension: slow at low tension, fast/mixed at peak.
   harmonic_map: array of {bar, root_degree, chord_name} for every bar in the section.
     Bass and drums use this to lock onto chord changes structurally.
     root_degree is the scale degree of the chord root (1=tonic, 4=subdominant, 5=dominant, etc.)
-  bass_sh101.swing: 0.0-0.5 — add swing feel appropriate to the genre/mood.
+  bass_sh101.swing: 0.0-0.5 -- add swing feel appropriate to the genre/mood.
+  harmony.synth.buchla / harmony.synth.hybrid: full ADSR envelope available --
+    attack_s, decay_s (0=skip), sustain (0.0-1.0), release_s.
+    sustain=1.0 + decay_s=0 = held texture pad; sustain=0.0 + short decay_s = pluck/transient.
+  globalNotes: MUST include specific beat-level locks between bass and kick,
+    register boundaries (bass below C3, pads above C4, etc.), and a 2-bar transition
+    tail instruction so sections blend smoothly into each other.
 
 Return ONLY valid JSON. No explanation."""
 
@@ -164,7 +175,7 @@ def evolve(sheet: dict, next_section: str, api_key: str | None = None) -> dict:
         print(f"  Evolved -> bpm={evolved.get('bpm')} tension={evolved.get('tension', '?')} | mood={evolved.get('mood', '')[:60]}")
         return evolved
     except Exception as e:
-        print(f"  [evolve error] {e} — keeping current sheet")
+        print(f"  [evolve error] {e} -- keeping current sheet")
         return current
 
 
@@ -178,7 +189,7 @@ def run_session(
 ) -> dict[str, AudioSegment]:
     """
     Fire all active agents in parallel.
-    Each agent: reads the shared Music Sheet → LLM sequence call → synthesize audio.
+    Each agent: reads the shared Music Sheet -> LLM sequence call -> synthesize audio.
     Returns { agent_name: AudioSegment }.
     """
     Path(out_dir).mkdir(parents=True, exist_ok=True)
@@ -205,7 +216,15 @@ def run_session(
             sheet, output_path=p, api_key=ant_key,
             vst_path=config.VST_PATHS.get("drums"))
 
-    if "harmony" not in disabled and HAS_HARMONY and agents.get("harmony", {}).get("active"):
+    # "harmony" disables both sub-tracks; "buchla"/"hybrid" disable individually.
+    # Only run the harmony agent if at least one sub-track is still active.
+    _harmony_active = (
+        HAS_HARMONY
+        and agents.get("harmony", {}).get("active")
+        and "harmony" not in disabled
+        and not ("buchla" in disabled and "hybrid" in disabled)
+    )
+    if _harmony_active:
         # base path: agent derives _buchla.wav and _hybrid.wav from it
         _p = str(Path(out_dir) / f"{prefix}harmony.wav")
         tasks["harmony"] = lambda p=_p: run_harmony(
@@ -225,7 +244,7 @@ def run_session(
     gui_out    = sys.stdout
     old_stdout = sys.stdout
     sys.stdout = _AgentStream(gui_out)
-    gui_out.write(f"  agents → {', '.join(tasks.keys())}\n")
+    gui_out.write(f"  agents -> {', '.join(tasks.keys())}\n")
 
     def _wrap(name: str, fn):
         log_path = Path(out_dir) / f"{name}.log"
@@ -252,8 +271,11 @@ def run_session(
                         gui_out.write(f"  [empty] {name}\n")
                     elif name == "harmony" and isinstance(audio, dict):
                         # harmony_agent returns {"buchla": seg, "hybrid": seg}
+                        # Honour individual sub-track disable flags
                         for sub_name, sub_audio in audio.items():
-                            if sub_audio:
+                            if sub_name in disabled:
+                                gui_out.write(f"  [skip]  {sub_name:<12} (disabled)\n")
+                            elif sub_audio:
                                 results[sub_name] = sub_audio
                                 gui_out.write(f"  [done]  {sub_name:<12} {len(sub_audio)/1000:.1f}s\n")
                     elif audio:
@@ -272,34 +294,35 @@ def run_session(
 # ── FULL TRACK ────────────────────────────────────────────────────────────
 
 def run_track(
-    brief:   str,
-    arc:     list[str] | None = None,
-    out_dir: str | Path = "output",
-    disable: list[str] | None = None,
+    brief:      str,
+    arc:        list[str] | None = None,
+    out_dir:    str | Path = "output",
+    disable:    list[str] | None = None,
+    single_llm: bool = False,
 ) -> AudioSegment | None:
     """
     Full pipeline:
-      1. Chatroom negotiates verse1 → initial Music Sheet
+      1. Chatroom negotiates verse1 -> initial Music Sheet
       2. For each section: evolve() then run_session()
       3. mixer.mix_section() per section
-      4. mixer.stitch_and_master() → full_track.wav
+      4. mixer.stitch_and_master() -> full_track.wav
     """
-    from mixer.mixer import mix_section, stitch_and_master
+    from mixer.mixer import mix_section, stitch_and_master, stitch_stem
 
     arc     = arc or DEFAULT_ARC
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"\n{'=' * 62}")
-    print(f"  THE CLANKERS 3 — FULL TRACK")
+    print(f"  THE CLANKERS 3 -- FULL TRACK")
     print(f"  Brief : {brief}")
-    print(f"  Arc   : {' → '.join(arc)}")
+    print(f"  Arc   : {' -> '.join(arc)}")
     print(f"{'=' * 62}\n")
 
     # ── Step 1: chatroom negotiates the opening section ────────────────
     print("Step 1: Chatroom negotiating opening section...\n")
     room  = Chatroom(session_name=arc[0])
-    sheet = room.negotiate_section(brief=brief, section_name=arc[0])
+    sheet = room.negotiate_section(brief=brief, section_name=arc[0], solo=single_llm)
 
     # Inject canonical tension for the opening section if chatroom didn't set it
     if "tension" not in sheet:
@@ -311,12 +334,16 @@ def run_track(
 
     sections: list[AudioSegment] = []
 
+    # Per-stem section lists (all stems, padded with silence when inactive)
+    stem_sections:  dict[str, list] = {name: [] for name in ALL_STEMS}
+    stem_had_audio: dict[str, bool] = {name: False for name in ALL_STEMS}
+
     # ── Step 2-4: walk the arc ─────────────────────────────────────────
     for i, section in enumerate(arc):
         import time as _t; _t.sleep(0.05)   # yield for GUI
 
         if i > 0:
-            print(f"\n  Evolving → {section.upper()}...")
+            print(f"\n  Evolving -> {section.upper()}...")
             sheet = evolve(sheet, section)
             with open(out_dir / f"sheet_{section}.json", "w") as f:
                 json.dump(sheet, f, indent=2)
@@ -333,14 +360,47 @@ def run_track(
         if mixed:
             path = out_dir / f"{section}_mix.wav"
             mixed.export(str(path), format="wav")
-            print(f"  Mix → {path}  ({len(mixed)/1000:.1f}s)")
+            print(f"  Mix -> {path}  ({len(mixed)/1000:.1f}s)")
             sections.append(mixed)
+
+            # Collect per-stem audio; pad with silence if agent was silent this section
+            section_dur_ms = len(mixed)
+            for stem_name in ALL_STEMS:
+                if stem_name in tracks:
+                    stem_sections[stem_name].append(tracks[stem_name])
+                    stem_had_audio[stem_name] = True
+                else:
+                    stem_sections[stem_name].append(
+                        AudioSegment.silent(duration=section_dur_ms, frame_rate=44100)
+                    )
 
     if not sections:
         print("No audio produced.")
         return None
 
-    # ── Step 5: stitch + master ────────────────────────────────────────
+    # ── Step 5a: export individual stems (time-aligned, no master compression)
+    stems_dir = out_dir / "stems"
+    stems_dir.mkdir(parents=True, exist_ok=True)
+    print("\n  Exporting stems...")
+    exported_stems = []
+    for stem_name in ALL_STEMS:
+        if not stem_had_audio.get(stem_name):
+            continue   # agent never produced audio -- skip
+        segs = stem_sections[stem_name]
+        if not segs:
+            continue
+        try:
+            full_stem = stitch_stem(segs)
+            stem_path = stems_dir / f"{stem_name}.wav"
+            full_stem.export(str(stem_path), format="wav")
+            print(f"  Stem -> {stem_name}.wav  ({len(full_stem)/1000:.1f}s)")
+            exported_stems.append(stem_name)
+        except Exception as e:
+            print(f"  [stem error] {stem_name}: {e}")
+    if exported_stems:
+        print(f"  Stems dir: {stems_dir}")
+
+    # ── Step 5b: stitch + master ────────────────────────────────────────
     print("\n  Assembling + mastering full track...")
     full_track = stitch_and_master(sections)
 
@@ -416,7 +476,7 @@ def run_solo(
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description="The Clankers 3 — Conductor")
+    parser = argparse.ArgumentParser(description="The Clankers 3 -- Conductor")
     parser.add_argument("brief", nargs="?",
                         default="dark industrial EBM, cold acid bass, mechanical drums")
     parser.add_argument("--arc", nargs="+", default=None,

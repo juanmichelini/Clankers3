@@ -1,17 +1,17 @@
 """
-The Clankers 2.0 — Speech Scraper
+The Clankers 2.0 -- Speech Scraper
 Harvests speech audio from the web for voice engine training.
 
 Sources:
-  youtube   — YouTube / podcasts via yt-dlp
-  archive   — Internet Archive (public domain speech)
-  librivox  — LibriVox public domain audiobooks
-  web       — General web crawler (follows links, harvests audio files)
+  youtube   -- YouTube / podcasts via yt-dlp
+  archive   -- Internet Archive (public domain speech)
+  librivox  -- LibriVox public domain audiobooks
+  web       -- General web crawler (follows links, harvests audio files)
 
 Output:
   scraped_speech/
     youtube/   archive/   librivox/   web/
-  manifest.json  ← per-file metadata: source, url, duration, sample_rate, speech_score
+  manifest.json  <- per-file metadata: source, url, duration, sample_rate, speech_score
 
 Usage:
   python tools/speech_scraper.py --query "paranoid monologue" --sources youtube archive
@@ -33,7 +33,7 @@ from datetime import datetime
 import requests
 from bs4 import BeautifulSoup
 
-# Optional heavy deps — degrade gracefully
+# Optional heavy deps -- degrade gracefully
 try:
     import soundfile as sf
     HAS_SOUNDFILE = True
@@ -64,7 +64,7 @@ except Exception:
 
 SUPPORTED_AUDIO_EXT = {".mp3", ".wav", ".flac", ".ogg", ".m4a", ".opus", ".aac"}
 MIN_DURATION_S  = 4.0    # discard clips shorter than this
-MAX_DURATION_S  = 7200.0  # cap at 2 hours — we want long recordings for word libraries
+MAX_DURATION_S  = 7200.0  # cap at 2 hours -- we want long recordings for word libraries
 MIN_SAMPLE_RATE = 16000  # 16 kHz floor
 SPEECH_SCORE_THRESHOLD = 0.15  # fraction of frames detected as speech (webrtcvad)
 
@@ -200,7 +200,7 @@ class AudioValidator:
             if rms < 0.002:
                 return 0.0  # silence
             zcr = float(np.mean(np.abs(np.diff(np.sign(data)))) * sr / 2)
-            # Typical speech ZCR: 1000–4500 Hz
+            # Typical speech ZCR: 1000-4500 Hz
             speech_like = 1.0 if 800 <= zcr <= 5000 else 0.3
             return min(1.0, rms * 10 * speech_like)
         except Exception:
@@ -293,7 +293,7 @@ class YouTubeAdapter(BaseAdapter):
 
     def run(self, query: str, manifest: list) -> int:
         if not HAS_YTDLP:
-            print("  [youtube] yt-dlp not found — skipping. Install: pip install yt-dlp")
+            print("  [youtube] yt-dlp not found -- skipping. Install: pip install yt-dlp")
             return 0
 
         out_dir = self.output_root / "youtube"
@@ -441,7 +441,7 @@ class ArchiveAdapter(BaseAdapter):
 class LibrivoxAdapter(BaseAdapter):
     """
     Fetches audiobooks from the LibriVox API.
-    Good source of varied speech — volunteers with different voices/accents.
+    Good source of varied speech -- volunteers with different voices/accents.
     """
 
     def run(self, query: str, manifest: list) -> int:
@@ -545,7 +545,7 @@ class WebCrawlerAdapter(BaseAdapter):
         start = self.collected
 
         if not self.seed_urls:
-            self.log("[web] no seed URLs provided — skipping general web crawl")
+            self.log("[web] no seed URLs provided -- skipping general web crawl")
             return 0
 
         for seed in self.seed_urls:
@@ -647,7 +647,7 @@ def scrape(
     if manifest_path.exists():
         with open(manifest_path) as f:
             manifest = json.load(f)
-        print(f"Resuming — {len(manifest)} files already in manifest.")
+        print(f"Resuming -- {len(manifest)} files already in manifest.")
     else:
         manifest = []
 
@@ -661,7 +661,7 @@ def scrape(
     }
 
     print(f"\n{'─'*50}")
-    print(f"  Clankers 2.0 — Speech Scraper")
+    print(f"  Clankers 2.0 -- Speech Scraper")
     print(f"  Query   : {query!r}")
     print(f"  Sources : {', '.join(sources)}")
     print(f"  Output  : {output_root}/")
@@ -670,7 +670,7 @@ def scrape(
 
     for source in sources:
         if source not in adapters:
-            print(f"  [warn] unknown source: {source!r} — skipping")
+            print(f"  [warn] unknown source: {source!r} -- skipping")
             continue
         adapter = adapters[source]
         adapter.collected = len(manifest)  # sync count across adapters
@@ -694,7 +694,7 @@ def scrape(
 
 def main():
     p = argparse.ArgumentParser(
-        description="Clankers 2.0 — Speech Scraper",
+        description="Clankers 2.0 -- Speech Scraper",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p.add_argument("--query",  default="spoken word monologue",

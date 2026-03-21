@@ -1,14 +1,14 @@
 """
-The Clankers 2.0 — Voice Agent (SAMPLER)
+The Clankers 2.0 -- Voice Agent (SAMPLER)
 Reads a Music Sheet JSON, selects samples from the character library,
 stitches them into a voice performance, outputs audio.
 
 Library structure (output of voice_slicer.py):
   samples/profiles/
     ranter/
-      stop.wav, stop_2.wav, nobody.wav ...   ← word samples
+      stop.wav, stop_2.wav, nobody.wav ...   <- word samples
       phrases/
-        its_still_there.wav                  ← phrase samples
+        its_still_there.wav                  <- phrase samples
     witness/
     ghost/
     child/
@@ -46,7 +46,7 @@ MAX_PHRASE_WORDS = 8
 def load_library(character: str) -> dict[str, list[Path]]:
     """
     Scan character folder and return dict of word -> [file paths].
-    Handles duplicates: stop.wav, stop_2.wav → all under "stop".
+    Handles duplicates: stop.wav, stop_2.wav -> all under "stop".
     """
     folder = SAMPLE_DIR / character
     if not folder.exists():
@@ -82,7 +82,7 @@ def load_phrase_library(character: str) -> dict[str, list[Path]]:
 def _clean_phrase_key(text: str) -> str:
     """
     Convert a hint string to the same key format used by voice_slicer.py.
-    'It's still there!' → 'its_still_there'
+    'It's still there!' -> 'its_still_there'
     """
     text = re.sub(r"[^\w\s]", '', text).strip().lower()
     words = text.split()[:MAX_PHRASE_WORDS]
@@ -92,7 +92,7 @@ def _clean_phrase_key(text: str) -> str:
 # ─── WORD RESOLUTION ──────────────────────────────────────────────────────────
 
 def find_word(word: str, library: dict) -> Path | None:
-    """Direct lookup — pick random variant if multiple exist."""
+    """Direct lookup -- pick random variant if multiple exist."""
     clean = re.sub(r'[^\w]', '', word).lower()
     variants = library.get(clean)
     if variants:
@@ -149,17 +149,17 @@ def resolve_word(word: str, context_phrase: str, library: dict) -> tuple[Path | 
     if path:
         return path, "direct"
 
-    print(f"  [missing] '{word}' (in '{context_phrase}') — asking LLM...")
+    print(f"  [missing] '{word}' (in '{context_phrase}') -- asking LLM...")
     available = list(library.keys())
     candidates = llm_describe_word(word, context_phrase, available)
 
     for candidate in candidates:
         path = find_word(candidate, library)
         if path:
-            print(f"  [llm match] '{word}' → '{candidate}'")
+            print(f"  [llm match] '{word}' -> '{candidate}'")
             return path, "llm"
 
-    print(f"  [unresolved] '{word}' — no match found")
+    print(f"  [unresolved] '{word}' -- no match found")
     return None, "missing"
 
 
@@ -193,8 +193,8 @@ def build_sequence(
     Build a playback sequence from the Music Sheet hints.
 
     Resolution priority per hint:
-      1. Direct phrase match  — the whole hint matches a phrase file
-      2. Word-by-word         — fall back to individual word samples (with LLM assist)
+      1. Direct phrase match  -- the whole hint matches a phrase file
+      2. Word-by-word         -- fall back to individual word samples (with LLM assist)
 
     Returns a list of (AudioSegment, label) tuples.
     """
@@ -209,7 +209,7 @@ def build_sequence(
                 path = random.choice(variants)
                 seg = _load_seg(path)
                 sequence.append((seg, key))
-                print(f"  [phrase] '{hint}' → {path.name}")
+                print(f"  [phrase] '{hint}' -> {path.name}")
                 continue
 
         # 2. Word-by-word fallback
@@ -408,7 +408,7 @@ def run(sheet: dict, output_path: str = "voice_output.wav") -> AudioSegment | No
         fill_count = {"sparse": 6, "medium": 12, "dense": 24,
                       "high": 32, "very low": 3}.get(density, 8)
         sequence = random_fill(word_library, phrase_library, fill_count)
-        print(f"  [fill] No hints resolved — using {len(sequence)} random clips")
+        print(f"  [fill] No hints resolved -- using {len(sequence)} random clips")
 
     performance = build_performance(
         sequence, hints, density, total_ms,

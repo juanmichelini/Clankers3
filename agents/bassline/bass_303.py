@@ -1,5 +1,5 @@
 """
-The Clankers 2.0 — Bass 303 Agent (SYNTHESIZER)
+The Clankers 2.0 -- Bass 303 Agent (SYNTHESIZER)
 Roland TB-303-style acid bass synthesizer.
 Reads key, bpm, bars, and pattern from the Music Sheet,
 asks Claude to generate a note sequence, synthesizes audio.
@@ -29,7 +29,7 @@ try:
     HAS_SCIPY = True
 except ImportError:
     def _lowpass(signal, cutoff_hz, sr):
-        # Box filter approximation — crude but scipy-free
+        # Box filter approximation -- crude but scipy-free
         window = max(1, int(sr / (cutoff_hz * 4)))
         if window <= 1:
             return signal
@@ -127,18 +127,18 @@ Instruction: {instruction}
 Return a JSON object with a "sequence" array. Each element has:
 - "degree": scale degree 1-7 (1 = root note)
 - "octave": 1 (very low sub-bass), 2 (bass, default), or 3 (upper bass)
-- "beats": duration in beats — use 0.25, 0.5, 1, 2, or 4
-- "accent": boolean — louder, more open filter
-- "slide": boolean — glide pitch from previous note
-- "rest": boolean — silence (ignore degree/octave if true)
+- "beats": duration in beats -- use 0.25, 0.5, 1, 2, or 4
+- "accent": boolean -- louder, more open filter
+- "slide": boolean -- glide pitch from previous note
+- "rest": boolean -- silence (ignore degree/octave if true)
 
 Rules:
 - Total beats must sum to exactly {total_beats}
-- Let the mood, section, and pattern drive rhythm and density — don't always default to even 16ths
+- Let the mood, section, and pattern drive rhythm and density -- don't always default to even 16ths
 - Vary octave across the sequence for melodic interest
 - Use accents to create rhythmic shape (roughly 1 in 4 notes)
 - Slides connect melodically adjacent notes naturally
-- Rests add space and tension — use them musically
+- Rests add space and tension -- use them musically
 
 Return ONLY valid JSON. No explanation, no markdown."""
 
@@ -210,7 +210,7 @@ def synth_note(
     accent: bool,
     cutoff_hz: float,
 ) -> np.ndarray:
-    """Synthesize one 303-style note: sawtooth → filter → envelope."""
+    """Synthesize one 303-style note: sawtooth -> filter -> envelope."""
     n = max(1, int(SAMPLE_RATE * duration_s))
     raw = _sawtooth(freq_start, freq_end, n)
     note_cutoff = min(cutoff_hz * (1.6 if accent else 1.0), SAMPLE_RATE * 0.45)
@@ -414,7 +414,7 @@ def _synth_cutoff_from_params(synth: dict, instruction: str, mood: str) -> float
     """Resolve filter cutoff Hz from synth params (preferred) or keyword fallback."""
     raw = synth.get("filter_cutoff")
     if raw is not None:
-        # 0.0 → 200 Hz (dark), 1.0 → 4000 Hz (acid bright)
+        # 0.0 -> 200 Hz (dark), 1.0 -> 4000 Hz (acid bright)
         return 200.0 + float(raw) * 3800.0
     return pick_cutoff(instruction, mood)
 
@@ -461,7 +461,7 @@ def run(sheet: dict, output_path: str = "bass303_output.wav",
         audio = render_sequence_vst(notes, bpm, root, intervals, vst_path, total_ms, synth_params)
     else:
         if vst_path and not HAS_DAWDREAMER:
-            print("  [warn] dawdreamer not installed — falling back to numpy synthesis")
+            print("  [warn] dawdreamer not installed -- falling back to numpy synthesis")
         audio = render_sequence(notes, bpm, root, intervals, cutoff_hz)
 
     # Apply distortion from synth params if set, otherwise fall through to keyword FX

@@ -1,11 +1,11 @@
 """
-The Clankers 2.0 — Voder Agent (v2 — 5-Formant Rosenberg Engine)
+The Clankers 2.0 -- Voder Agent (v2 -- 5-Formant Rosenberg Engine)
 
 Formant speech synthesizer rebuilt using the ClankerVoice DSP stack:
   - GlottalPulseOsc  : Rosenberg glottal pulse model with aspiration noise
-  - BiquadBPFBank    : 5-formant bank (F1-F5) — full vocal presence and body
+  - BiquadBPFBank    : 5-formant bank (F1-F5) -- full vocal presence and body
   - Per-sample synthesis with cosine formant interpolation (CONTROL_RATE=8)
-  - Context-dependent coarticulation (V→V 90ms, C→V 35ms, V→C 60ms, etc.)
+  - Context-dependent coarticulation (V->V 90ms, C->V 35ms, V->C 60ms, etc.)
   - Proper plosive rendering with VOT (voice onset time) aspiration tail
   - 'h' phoneme inherits formants from the following vowel
   - Vibrato (5.2 Hz) + pitch jitter + amplitude shimmer
@@ -22,7 +22,7 @@ Music Sheet key: agents.voder
   "active":        bool,
   "instruction":   string  (e.g. "dark, descending, mechanical, eerie"),
   "phoneme_hints": list    (informal hints, e.g. ["oh mah", "sss ee n"]),
-  "fundamental_hz": float  (optional base pitch; 80–200; default 130)
+  "fundamental_hz": float  (optional base pitch; 80-200; default 130)
 }
 """
 
@@ -383,7 +383,7 @@ class VoderEngine:
             buf[sample_pos] += sample * amp
 
     # ------------------------------------------------------------------
-    # "h" phoneme — formant-filtered noise shaped by the next vowel
+    # "h" phoneme -- formant-filtered noise shaped by the next vowel
     # ------------------------------------------------------------------
 
     def _render_h_phoneme(self, buf, evt, next_evt, base_freq):
@@ -549,7 +549,7 @@ class VoderEngine:
                     buf[sample_pos] += shaped * env * 0.25
 
     # ------------------------------------------------------------------
-    # Transition timing (coarticulation — context-dependent)
+    # Transition timing (coarticulation -- context-dependent)
     # ------------------------------------------------------------------
 
     @staticmethod
@@ -561,7 +561,7 @@ class VoderEngine:
         if pp == "vowel" and cp == "vowel":
             return 90.0                               # Slow diphthong-like sweep
         if pp in ("plosive", "fricative") and cp == "vowel":
-            return 35.0                               # Fast consonant→vowel onset
+            return 35.0                               # Fast consonant->vowel onset
         if pp == "vowel" and cp in ("plosive", "fricative", "nasal"):
             return 60.0                               # Slightly slower offset
         if pp in ("nasal", "liquid") and cp == "vowel":
@@ -689,7 +689,7 @@ def _distribute_phonemes(
     total_ms = (total_samples / SAMPLE_RATE) * 1000.0
 
     if total_consonant_ms >= total_ms:
-        # Consonants alone exceed available time — scale everything down
+        # Consonants alone exceed available time -- scale everything down
         scale = total_ms / (total_consonant_ms + total_vowel_default_ms + 1e-9)
         for info in infos:
             info["dur_ms"] *= scale
@@ -698,7 +698,7 @@ def _distribute_phonemes(
         if total_vowel_default_ms > 0:
             vowel_scale = remaining_ms / total_vowel_default_ms
         else:
-            # No vowels — distribute extra evenly among consonants
+            # No vowels -- distribute extra evenly among consonants
             vowel_scale = 1.0
             extra_per = remaining_ms / len(infos)
             for info in infos:
@@ -786,7 +786,7 @@ Instruction: {instruction}
 Base pitch: MIDI note {base_midi} (~{int(base_hz)} Hz)
 Phoneme hints (optional inspiration): {hints}
 
-AVAILABLE PHONEMES — use ONLY these exact names:
+AVAILABLE PHONEMES -- use ONLY these exact names:
   Vowels (voiced, carry melody):
     ee  ih  eh  ae  ah  aw  oh  oo  uh  er
   Nasals (voiced, hum-like):
@@ -811,12 +811,12 @@ Return this JSON object (NO other text):
 }}
 
 Rules:
-- "phonemes": 1–5 phonemes per word, from the lists above ONLY
-- "note": MIDI note {base_midi - 7}–{base_midi + 5}. Vary it for melodic movement.
-- "duration": beats per word (0.5–3.0). Vowel-heavy words should be longer.
+- "phonemes": 1-5 phonemes per word, from the lists above ONLY
+- "note": MIDI note {base_midi - 7}-{base_midi + 5}. Vary it for melodic movement.
+- "duration": beats per word (0.5-3.0). Vowel-heavy words should be longer.
 - Total "duration" sum ≈ {total_beats} beats
-- 8–20 words total
-- Spend most time on vowels (ee, ah, oh, oo, uh) — they carry the voice
+- 8-20 words total
+- Spend most time on vowels (ee, ah, oh, oo, uh) -- they carry the voice
 - Use consonants for rhythm and texture
 - Create intentional melodic pitch movement (not random)
 - Think of a machine SINGING syllables, not random sounds
@@ -874,8 +874,8 @@ def render(words: list[dict], bpm: int, bars: int) -> AudioSegment:
       - Build a flat list of PhonemeEvents from all words (for correct
         coarticulation context across word boundaries)
       - Render TWO VoderEngine passes from the same events:
-          · upper voice  — median MIDI note of the timeline (carries speech)
-          · sub voice    — one octave lower (adds presence and body)
+          · upper voice  -- median MIDI note of the timeline (carries speech)
+          · sub voice    -- one octave lower (adds presence and body)
       - Blend upper (0.65) + sub (0.40), then normalize to 0.90 peak so
         the perceived output level matches a single-voice render
     """
@@ -887,7 +887,7 @@ def render(words: list[dict], bpm: int, bars: int) -> AudioSegment:
     all_events = build_phoneme_events(words, bpm)
 
     if not all_events:
-        print("  [voder] No phoneme events — returning silence")
+        print("  [voder] No phoneme events -- returning silence")
         return AudioSegment.silent(duration=total_ms)
 
     # Use median MIDI note across all words for the upper voice
@@ -906,11 +906,11 @@ def render(words: list[dict], bpm: int, bars: int) -> AudioSegment:
             return np.pad(arr, (0, total_samples - len(arr)))
         return arr[:total_samples]
 
-    # Upper voice — carries speech intelligibility and timbral character
+    # Upper voice -- carries speech intelligibility and timbral character
     engine_hi = VoderEngine(SAMPLE_RATE)
     raw_hi    = _fit(engine_hi.render(all_events, midi_note=midi_note, velocity=0.85))
 
-    # Sub voice — one octave down, adds presence and body (separate engine state)
+    # Sub voice -- one octave down, adds presence and body (separate engine state)
     engine_lo = VoderEngine(SAMPLE_RATE)
     raw_lo    = _fit(engine_lo.render(all_events, midi_note=midi_sub,  velocity=0.85))
 
@@ -919,12 +919,12 @@ def render(words: list[dict], bpm: int, bars: int) -> AudioSegment:
     # before normalization, preserving the same peak loudness as before.
     raw = raw_hi * 0.65 + raw_lo * 0.40
 
-    # Normalize to 0.90 of full scale — matches perceived level of original
+    # Normalize to 0.90 of full scale -- matches perceived level of original
     peak = np.max(np.abs(raw))
     if peak > 1e-9:
         raw = raw / peak * 0.90
     else:
-        print("  [voder] Output is silent — check phoneme hints and library")
+        print("  [voder] Output is silent -- check phoneme hints and library")
 
     pcm   = (raw * 32767).astype(np.int16).tobytes()
     audio = AudioSegment(pcm, frame_rate=SAMPLE_RATE, sample_width=2, channels=1)
@@ -974,7 +974,7 @@ def run(
     mood        = sheet.get("mood", "")
     total_ms    = int(bars * 4 * (60000 / bpm))
 
-    print(f"\n── VODER AGENT (v2 — 5-formant Rosenberg) ──────────")
+    print(f"\n── VODER AGENT (v2 -- 5-formant Rosenberg) ──────────")
     print(f"Key          : {sheet.get('key', '?')}")
     print(f"Duration     : {total_ms}ms  ({bars} bars @ {bpm} bpm)")
     print(f"Phoneme DB   : {len(PHONEME_TABLE)} phonemes  ({len(VOWELS)} vowels)")

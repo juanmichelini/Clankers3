@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# session.py — The Clankers 3
+# session.py -- The Clankers 3
 # End-to-end runner. Entry point for the full pipeline.
 #
 # Usage:
@@ -8,13 +8,20 @@
 #   python session.py "acid rave" --disable voder --out my_output
 #
 # Pipeline:
-#   brief → Chatroom (verse1 negotiation) → Music Sheet JSON
-#         → Conductor (evolve per section) → Agent Swarm (parallel)
-#         → Mixer (EQ + master compression) → full_track.wav
+#   brief -> Chatroom (verse1 negotiation) -> Music Sheet JSON
+#         -> Conductor (evolve per section) -> Agent Swarm (parallel)
+#         -> Mixer (EQ + master compression) -> full_track.wav
 
 import argparse
+import io
 import sys
 from pathlib import Path
+
+# Force UTF-8 output on Windows (avoids cp1252 errors from LLM responses)
+if hasattr(sys.stdout, 'buffer'):
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+if hasattr(sys.stderr, 'buffer'):
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -23,7 +30,7 @@ from conductor.conductor import run_track, run_solo, DEFAULT_ARC
 
 def main():
     parser = argparse.ArgumentParser(
-        description="The Clankers 3 — Full Session Runner",
+        description="The Clankers 3 -- Full Session Runner",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -94,7 +101,7 @@ Solo companion mode (invoke a single agent in isolation):
                 disable = args.disable,
             )
         if result is None:
-            print("[session] No audio produced — check agent logs in the output directory.")
+            print("[session] No audio produced -- check agent logs in the output directory.")
             sys.exit(1)
     except KeyboardInterrupt:
         print("\n[session] Aborted.")

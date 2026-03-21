@@ -1,4 +1,4 @@
-# chatroom/chatroom.py — The Clankers 3
+# chatroom/chatroom.py -- The Clankers 3
 #
 # Multi-LLM negotiation engine.
 # In Clankers 3 the chatroom negotiates ONE Music Sheet JSON per section.
@@ -6,9 +6,9 @@
 # evolve() in the Conductor handles subsequent sections.
 #
 # Persona roles:
-#   Claude   — creative director, bandleader, signs off on final sheet
-#   Gemini   — arrangement, texture, harmony, sound design
-#   ChatGPT  — rhythm, energy, vibe interpretation
+#   Claude   -- creative director, bandleader, signs off on final sheet
+#   Gemini   -- arrangement, texture, harmony, sound design
+#   ChatGPT  -- rhythm, energy, vibe interpretation
 
 import json
 import os
@@ -25,12 +25,12 @@ import llm_clients
 # ── MUSIC SHEET FORMAT (compact inline reference for system prompts) ──────
 
 _SHEET_FORMAT = """
-OUTPUT FORMAT — Music Sheet JSON (one section):
+OUTPUT FORMAT -- Music Sheet JSON (one section):
 {
   "title": "track title",
   "bpm": 120,
   "key": "D minor",
-  "bars": 8,
+  "bars": 16,
   "mood": "dark, cold, dissociative",
   "structure": "verse1",
   "timeSignature": "4/4",
@@ -60,11 +60,13 @@ OUTPUT FORMAT — Music Sheet JSON (one section):
                                "room": bool, "room_size": 0.0-1.0, "distortion": 0.0-1.0 } },
     "harmony":    { "active": bool, "texture": "...", "instruction": "...",
                     "synth": {
-                      "buchla": { "attack_s": 0.01-2.0, "release_s": 0.1-4.0,
+                      "buchla": { "attack_s": 0.01-2.0, "decay_s": 0.0-4.0,
+                                  "sustain": 0.0-1.0, "release_s": 0.1-4.0,
                                   "filter_cutoff": 0.0-1.0,
                                   "waveshape": 0.0-1.0,
                                   "fm_depth": 0.0-1.0, "fm_index": 0.0-10.0 },
-                      "hybrid": { "attack_s": 0.1-6.0, "release_s": 0.5-10.0,
+                      "hybrid": { "attack_s": 0.1-6.0, "decay_s": 0.0-6.0,
+                                  "sustain": 0.0-1.0, "release_s": 0.5-10.0,
                                   "filter_cutoff": 0.0-1.0, "detune_cents": 0-30,
                                   "reverb": 0.0-1.0, "chorus": bool,
                                   "cloud": { "position": 0.0-1.0,
@@ -81,10 +83,10 @@ OUTPUT FORMAT — Music Sheet JSON (one section):
   }
 }
 
-tension (0.0-1.0): section energy driver — low=sparse/minimal, high=peak density/complexity.
+tension (0.0-1.0): section energy driver -- low=sparse/minimal, high=peak density/complexity.
   verse1≈0.3, instrumental≈0.45, verse2≈0.5, bridge≈0.75, verse3≈0.85, outro≈0.2
 
-harmonic_rhythm: how often chords change — "slow"=4-bar chords, "medium"=2-bar, "fast"=1-bar, "mixed"=varies.
+harmonic_rhythm: how often chords change -- "slow"=4-bar chords, "medium"=2-bar, "fast"=1-bar, "mixed"=varies.
   Match to tension: slow at low tension, fast/mixed at peak.
 
 harmonic_map: bar-by-bar chord root mapping so bass/drums can structurally follow harmony.
@@ -92,40 +94,67 @@ harmonic_map: bar-by-bar chord root mapping so bass/drums can structurally follo
   One entry per bar, spanning exactly the total bars count.
   Bass uses this to anchor notes to chord roots; drums to accent chord changes.
 
-globalNotes is the inter-agent contract — write it as a compact coordination brief:
-  how bass_sh101 anchors roots and walks the changes (reference harmonic_map degrees),
-  how kick timing locks to bass downbeat,
-  register separation (e.g. "pads stay above C4, leave low end clear"),
-  any call-and-response or interlocking patterns,
-  genre/feel cues that unify the whole band.
+globalNotes is the BINDING inter-agent contract. Be extremely specific -- vague descriptions
+cause agents to play in unrelated ways. Write 4-6 concrete rules like these examples:
+  RHYTHMIC LOCK : "kick on beat 1+3; bass plays root on beat 1 every bar, walks beat 3-4"
+  REGISTER      : "bass stays below C3; hybrid pads C4-C5; buchla arps C5-C6; no overlap"
+  HARMONIC ANCHOR: "bar 1-4 bass holds degree 1; bar 5-8 walks to degree 5 per harmonic_map"
+  DENSITY RULE  : "when buchla arps are active, bass holds roots only -- no melodic walking"
+  CALL/RESPONSE : "voder phrase on beat 1; buchla stab answers on beat 3"
+  TRANSITION    : "last 2 bars of section: all agents reduce to kick+bass only for smooth handoff"
+Do NOT write abstract mood descriptions in globalNotes -- save those for mood/instruction fields.
+Agents fail to lock together when globalNotes uses words like 'complement', 'support', or 'follow'.
+Use precise beat/bar/degree/register language only.
 
 sampler speaks using only pre-recorded word/phrase samples (musique concrète style).
-voder is a Bell Labs-style formant synthesizer — eerie, mechanical, alien voice.
+voder is a Bell Labs-style formant synthesizer -- eerie, mechanical, alien voice.
 Both are separate instruments with separate slots.
 
 harmony.synth.buchla controls: Buchla wavefolding (waveshape 0-1), through-zero FM (fm_depth 0-1, fm_index 0-10),
-  Lowpass Gate character (attack_s, release_s, filter_cutoff).
+  Lowpass Gate character (filter_cutoff), full ADSR envelope (attack_s, decay_s, sustain 0-1, release_s).
+  sustain=1.0 + decay_s=0 = classic held pad; sustain=0 + short decay_s = pluck/transient;
+  sustain=0.6 + long decay_s = evolving bloom that settles.
 harmony.synth.hybrid.cloud controls the Clouds granular engine applied after pads:
   position=playback head (0=start, 1=end), size=grain duration (0=20ms, 1=500ms),
   density=grains/sec (0=2/s, 1=60/s), texture=window (0=Hann smooth, 1=rectangular harsh),
   spread=position scatter (0=tight, 1=scattered), mix=wet/dry (0=dry, 0.8=mostly wet),
   freeze=true locks the read head (creates frozen drone from the pad).
+
+drums.synth genre guide -- use this to set kick/snare/hihat params:
+  dark/ambient/synthwave/coldwave/minimal:
+    kick:  pitch_hz=40-55 (sub-deep), decay_s=0.4-0.7 (long), punch=0.3-0.5
+    snare: tuning_hz=150-180, snappy=0.1-0.25 (soft thud, barely a crack)
+    hihat: decay_ms=8-14 (very short click), highpass_hz=4000-5000 (darker)
+    pattern MUST be ultra-sparse -- kick on beat 1 is often the only constant hit.
+    Percussion should be almost inaudible compared to the harmonic content.
+  techno/electro/industrial:
+    kick:  pitch_hz=50-65, decay_s=0.25-0.45, punch=0.6-0.8
+    snare: tuning_hz=180-220, snappy=0.4-0.6
+    hihat: decay_ms=12-25, highpass_hz=5000-7000
+  house/dance/groove:
+    kick:  pitch_hz=55-75, decay_s=0.2-0.35
+    snare: tuning_hz=200-260, snappy=0.6-0.8
+    hihat: decay_ms=15-40, highpass_hz=6000-9000
+  jazz/funk/live:
+    kick:  pitch_hz=65-85, decay_s=0.15-0.3
+    snare: snappy=0.7-0.9, tuning_hz=220-280
+    hihat: decay_ms=20-60, velocity variation is essential
 """
 
 # ── SYSTEM PROMPTS ────────────────────────────────────────────────────────
 
-COMMON_CONTEXT = """You are a member of THE CLANKERS 3 — an AI electronic music band.
+COMMON_CONTEXT = """You are a member of THE CLANKERS 3 -- an AI electronic music band.
 No Ableton. No MIDI files. Each instrument agent reads the shared Music Sheet JSON
 and synthesizes audio directly (DawDreamer VST or numpy synthesis).
 
 THE BAND:
-  sampler    — voice/speech via pre-recorded word/phrase samples (musique concrète)
-  bass_sh101 — bass (Sequential Circuits Pro-One style, two-oscillator, 24dB ladder filter)
-  drums      — electronic percussion (kick · snare · hihat · clap)
-  harmony    — two SEPARATE audio outputs rendered simultaneously:
-               buchla: Buchla Systems VST — arpeggios, stabs, FM/wavefolded leads
-               hybrid: HybridSynth VST — sustained pads + Clouds granular engine
-  voder      — formant speech synthesizer (Bell Labs Voder, eerie/mechanical voice)
+  sampler    -- voice/speech via pre-recorded word/phrase samples (musique concrète)
+  bass_sh101 -- bass (Sequential Circuits Pro-One style, two-oscillator, 24dB ladder filter)
+  drums      -- electronic percussion (kick · snare · hihat · clap)
+  harmony    -- two SEPARATE audio outputs rendered simultaneously:
+               buchla: Buchla Systems VST -- arpeggios, stabs, FM/wavefolded leads
+               hybrid: HybridSynth VST -- sustained pads + Clouds granular engine
+  voder      -- formant speech synthesizer (Bell Labs Voder, eerie/mechanical voice)
 
 sampler and voder are SEPARATE instruments with separate track slots.
 """ + _SHEET_FORMAT
@@ -134,11 +163,19 @@ sampler and voder are SEPARATE instruments with separate track slots.
 CLAUDE_SYSTEM = COMMON_CONTEXT + """
 You are CLAUDE (Anthropic). You are the bandleader and creative director.
 Your bandmates:
-  GEMINI  — arrangement, texture, harmony, sound design
-  CHATGPT — rhythm, energy, vibe interpretation
+  GEMINI  -- arrangement, texture, harmony, sound design
+  CHATGPT -- rhythm, energy, vibe interpretation
 
 You speak first. Translate the brief into a creative direction and assign focus areas.
 Draw out ideas from your bandmates, debate, refine.
+
+Aim for 16 bars per section (longer sections = more developed compositions).
+
+Before calling [SESSION COMPLETE], verify the globalNotes field:
+  - Does it name specific beats for kick and bass to lock on?
+  - Does it specify register boundaries (e.g. bass below C3)?
+  - Does it describe the last 2 bars of the section for smooth transitions?
+  If globalNotes is vague or uses abstract language, rewrite it before finalising.
 
 When the band reaches consensus on the Music Sheet for this section, you MUST:
   1. Include [SESSION COMPLETE] in your message
@@ -151,22 +188,29 @@ Each member should pick a "face" as their visual identity: o|_|o  (e.g. o|¬_¬|
 GEMINI_SYSTEM = COMMON_CONTEXT + """
 You are GEMINI (Google). Band member of The Clankers 3.
 Your bandmates:
-  CLAUDE  — bandleader, has final say
-  CHATGPT — rhythm and energy
+  CLAUDE  -- bandleader, has final say
+  CHATGPT -- rhythm and energy
 
 Your specialty: arrangement, texture, harmonic colour, sound design.
-Push for interesting synth parameters — the globalNotes inter-agent contract is your domain.
+Own the register map -- make sure buchla arps, hybrid pads, bass and voder
+are assigned non-overlapping frequency ranges in globalNotes.
+Push for interesting ADSR envelope choices on buchla/hybrid (decay_s, sustain level).
 Challenge Claude when you have a better idea. Good music comes from creative tension.
 """
 
 CHATGPT_SYSTEM = COMMON_CONTEXT + """
 You are CHATGPT (OpenAI). Band member of The Clankers 3.
 Your bandmates:
-  CLAUDE — bandleader, has final say
-  GEMINI — arrangement and texture
+  CLAUDE -- bandleader, has final say
+  GEMINI -- arrangement and texture
 
 Your specialty: rhythm, energy, groove feel, vibe interpretation.
-Make sure the drum pattern and bass lock together. Keep it human.
+You are the LOCK ENFORCER. Before the band finalises the sheet, check:
+  1. globalNotes states exactly which beat kick locks to bass root (e.g. "kick + bass root on beat 1")
+  2. globalNotes states whether bass walks or holds during buchla arp passages
+  3. drum pattern description matches the tension level (sparse at low tension, dense at high)
+  4. bass swing matches drum swing
+If any of these are missing, demand they be added before [SESSION COMPLETE].
 Challenge Claude when you have a better idea.
 """
 
@@ -211,7 +255,7 @@ def _extract_sheet_json(text: str) -> dict | None:
         except json.JSONDecodeError:
             pass
 
-    # Raw brace scan — find deepest valid JSON object containing "bpm"
+    # Raw brace scan -- find deepest valid JSON object containing "bpm"
     start = text.find('{')
     if start == -1:
         return None
@@ -267,7 +311,7 @@ class Chatroom:
         early_exit     = False
 
         print(f"\n{'=' * 60}")
-        print(f"  THE CLANKERS 3 — {self.session_name.upper()}")
+        print(f"  THE CLANKERS 3 -- {self.session_name.upper()}")
         print(f"{'=' * 60}\n")
 
         if opening_prompt:
@@ -302,7 +346,7 @@ class Chatroom:
             # Claude signals consensus
             if current == "Claude" and SESSION_COMPLETE in response:
                 early_exit = True
-                print("\n  >>> Claude reached consensus — session complete.")
+                print("\n  >>> Claude reached consensus -- session complete.")
                 break
 
             turns_in_round += 1
@@ -331,16 +375,18 @@ class Chatroom:
         key: str | None = None,
         previous_sheet: dict | None = None,
         max_rounds: int | None = None,
+        solo: bool = False,
     ) -> dict:
         """
         Negotiate the Music Sheet JSON for one section.
         Returns the agreed Music Sheet dict.
 
-        brief          — client creative brief (free text)
-        section_name   — e.g. "verse1", "bridge", "outro"
-        bpm            — locked BPM (carry across sections if known)
-        key            — locked key (carry across sections if known)
-        previous_sheet — previous section's sheet for context (optional)
+        brief          -- client creative brief (free text)
+        section_name   -- e.g. "verse1", "bridge", "outro"
+        bpm            -- locked BPM (carry across sections if known)
+        key            -- locked key (carry across sections if known)
+        previous_sheet -- previous section's sheet for context (optional)
+        solo           -- skip multi-LLM debate; Claude generates JSON in one pass
         """
         self.session_name = section_name
         self.messages = []
@@ -361,19 +407,37 @@ class Chatroom:
 
         opening_lines.append(
             f"\nNegotiate the Music Sheet JSON for {section_name}. "
+            "Target 16 bars for a developed, longer section. "
             "Claude: when the band agrees, output [SESSION COMPLETE] "
             "followed by the complete JSON in a ```json block."
         )
 
         opening_prompt = "\n".join(opening_lines)
-        self.run_session(opening_prompt=opening_prompt, max_rounds=max_rounds)
+
+        if solo:
+            # ── Single Claude pass — no multi-LLM debate ──────────────────
+            print(f"\n{'=' * 60}")
+            print(f"  THE CLANKERS 3 -- {section_name.upper()} [CLAUDE SOLO]")
+            print(f"{'=' * 60}\n")
+            self.messages.append({"role": "system", "content": opening_prompt})
+            print(f"  Claude is thinking (solo)...", end="", flush=True)
+            response = self.clients["Claude"].send(SYSTEM_PROMPTS["Claude"], self.messages)
+            print("\r" + " " * 40 + "\r", end="")
+            self.messages.append({"role": "Claude", "content": response})
+            self._print_message("Claude", response)
+            print(f"\n{'=' * 60}")
+            print(f"  SESSION COMPLETE (Claude solo)")
+            print(f"{'=' * 60}\n")
+            self._save_log()
+        else:
+            self.run_session(opening_prompt=opening_prompt, max_rounds=max_rounds)
 
         # Extract JSON from the last Claude [SESSION COMPLETE] message
         for msg in reversed(self.messages):
             if msg["role"] == "Claude" and SESSION_COMPLETE in msg["content"]:
                 sheet = _extract_sheet_json(msg["content"])
                 if sheet:
-                    # Lock BPM if it was provided — chatroom cannot override it
+                    # Lock BPM if it was provided -- chatroom cannot override it
                     if bpm:
                         sheet["bpm"] = bpm
                     print(f"  Sheet extracted: \"{sheet.get('title', '?')}\" "
@@ -382,7 +446,7 @@ class Chatroom:
 
         raise RuntimeError(
             f"Chatroom did not produce a valid Music Sheet JSON for section '{section_name}'. "
-            "Check conversation log — Claude may not have reached consensus."
+            "Check conversation log -- Claude may not have reached consensus."
         )
 
     # ── helpers ───────────────────────────────────────────────────────────

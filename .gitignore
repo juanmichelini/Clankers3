@@ -21,6 +21,9 @@ samples/
 .vscode/
 .idea/
 
+# Rust / WASM build artifacts
+clankers_dsp/target/
+
 # OS
 .DS_Store
 Thumbs.db

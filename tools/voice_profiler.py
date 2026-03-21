@@ -7,14 +7,14 @@ import requests
 
 OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
 
-# The Clankers 2.0 — default character profiles
+# The Clankers 2.0 -- default character profiles
 DEFAULT_PROFILES = ["ranter", "witness", "ghost", "child"]
 
 PROFILE_DESCRIPTIONS = {
     "ranter":  "paranoid inner monologue, intrusive thoughts, obsessive, self-interrupting, dark mental state",
     "witness": "cold, detached, clinical, observational, descriptive without emotion",
     "ghost":   "fragmented, drifting, melancholic, nostalgic, from another time or place",
-    "child":   "simple language, innocent, tender, naive — context makes it eerie or warm",
+    "child":   "simple language, innocent, tender, naive -- context makes it eerie or warm",
 }
 
 def get_word_categorizations(word_list, profiles, api_key=None):
@@ -108,7 +108,7 @@ def profile_voices_by_theme(input_dir, output_dir, profiles, batch_size=50, api_
                 # Normalize profile name to lowercase
                 profile = profile.lower()
                 if profile not in profiles:
-                    print(f"  [invalid profile] '{profile}' for '{word}' → defaulting to '{profiles[-1]}'")
+                    print(f"  [invalid profile] '{profile}' for '{word}' -> defaulting to '{profiles[-1]}'")
                     profile = profiles[-1]
 
                 profile_dir = os.path.join(output_dir, profile)

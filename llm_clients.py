@@ -12,7 +12,7 @@ from collections import deque
 import config
 
 # ---------------------------------------------------------------------------
-# Rate limiter — shared per provider, thread-safe
+# Rate limiter -- shared per provider, thread-safe
 # ---------------------------------------------------------------------------
 
 class RateLimiter:
