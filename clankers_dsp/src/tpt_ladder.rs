@@ -36,25 +36,13 @@ impl TptLadder {
         let g3 = g2 * g1;
         let g4 = g3 * g1;
 
-        // S: running state contribution from each pole
-        let sg = |s: f32| -> f32 { g1 * s };
-        let s0 = sg(self.s[0]);
-        let s1 = sg(s0 + self.s[1]);
-        let s2 = sg(s1 + self.s[2]);
-        let s3 = sg(s2 + self.s[3]);
-
-        // Feedback sum (implicit resolve)
-        let s_total = s0 + g1 * (s1 + g1 * (s2 + g1 * s3));
-        // actually use the standard resolved form:
-        let s_fb = self.s[0] * g3 + self.s[1] * g2 + self.s[2] * g1 + self.s[3];
-        let _ = (s0, s1, s2, s3, s_total); // suppress unused warnings
-
         // Pre-drive tanh
         let xd = (x * drive).tanh();
 
-        // Resolved input (suppress resonance feedback from all 4 states)
+        // Zavalishin resolved form: state contribution to output is (1-g1) * sum
+        let s_fb = (1.0 - g1) * (self.s[0] * g3 + self.s[1] * g2 + self.s[2] * g1 + self.s[3]);
         let denom = 1.0 + k * g4;
-        let y0 = (xd - k * g4 * s_fb / denom.max(1e-9)) / denom.max(1e-9);
+        let y0 = (xd - k * s_fb) / denom.max(1e-9);
 
         // Cascade 4 one-pole stages
         let tick = |input: f32, state: &mut f32| -> f32 {

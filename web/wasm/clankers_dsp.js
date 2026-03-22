@@ -44,26 +44,31 @@ export class ClankersBass {
     }
     /**
      * Trigger a note. cc_json: '{"74":80,"71":60}' or '{}'.
+     * hold_samples: note-on duration in samples (0 = use amp envelope only)
      * @param {number} midi_note
      * @param {number} velocity
+     * @param {number} hold_samples
      * @param {string} cc_json
      */
-    trigger(midi_note, velocity, cc_json) {
+    trigger(midi_note, velocity, hold_samples, cc_json) {
         const ptr0 = passStringToWasm0(cc_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
-        wasm.clankersbass_trigger(this.__wbg_ptr, midi_note, velocity, ptr0, len0);
+        wasm.clankersbass_trigger(this.__wbg_ptr, midi_note, velocity, hold_samples, ptr0, len0);
     }
     /**
      * Trigger + render full tail — isolated single voice, no shared state.
+     * Note: ClankerBoy uses MIDI 0-23 for bass roots. We transpose +24 semitones
+     * so the actual synthesis sits in the audible 50-200 Hz range.
      * @param {number} midi_note
      * @param {number} velocity
+     * @param {number} hold_samples
      * @param {string} cc_json
      * @returns {Float32Array}
      */
-    trigger_render(midi_note, velocity, cc_json) {
+    trigger_render(midi_note, velocity, hold_samples, cc_json) {
         const ptr0 = passStringToWasm0(cc_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.clankersbass_trigger_render(this.__wbg_ptr, midi_note, velocity, ptr0, len0);
+        const ret = wasm.clankersbass_trigger_render(this.__wbg_ptr, midi_note, velocity, hold_samples, ptr0, len0);
         return ret;
     }
 }
@@ -141,6 +146,7 @@ export class ClankersDrums {
     }
     /**
      * Trigger a hit and immediately render its full tail.
+     * Uses an isolated voice — no shared engine state contamination.
      * @param {number} voice_id
      * @param {number} velocity
      * @param {number} p0
@@ -203,6 +209,10 @@ function __wbg_get_imports() {
         },
         __wbg_new_from_slice_ff2c15e8e05ffdfc: function(arg0, arg1) {
             const ret = new Float32Array(getArrayF32FromWasm0(arg0, arg1));
+            return ret;
+        },
+        __wbg_new_with_length_81c1c31d4432cb9f: function(arg0) {
+            const ret = new Float32Array(arg0 >>> 0);
             return ret;
         },
         __wbindgen_init_externref_table: function() {

@@ -19,7 +19,7 @@ const PI: f32 = core::f32::consts::PI;
 const MAX_VOICE_SAMPLES: usize = SR as usize * 3; // 3 s max tail
 
 pub struct DrumVoice {
-    buf: Vec<f32>,
+    pub(crate) buf: Vec<f32>,
     pos: usize,
     active: bool,
 }
@@ -32,6 +32,10 @@ impl DrumVoice {
     fn from_buf(buf: Vec<f32>) -> Self {
         let active = !buf.is_empty();
         Self { buf, pos: 0, active }
+    }
+
+    pub fn into_buf(self) -> Vec<f32> {
+        self.buf
     }
 
     #[inline]
@@ -245,7 +249,7 @@ pub fn synth_tom(velocity: f32, midi_note: u8, pitch_norm: f32, decay_norm: f32)
 
 pub struct DrumsEngine {
     voices: Vec<DrumVoice>,
-    rng: Rng,
+    pub(crate) rng: Rng,
 }
 
 impl DrumsEngine {

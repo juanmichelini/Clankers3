@@ -71,11 +71,14 @@ impl BuchlaVoice {
         self.freq      = midi_to_hz(midi_note);
         self.mod_ratio = 0.5 + p.fm_index * 7.5;
         self.osc_principal.level = velocity * p.volume;
-        self.osc_mod.level       = p.fm_depth;
+        self.osc_mod.level       = 1.0; // FM depth applied via fm_hz, not osc level
 
-        self.vactrol.reset();
         self.vactrol.set_times(0.001, p.decay_s);
-        self.gate   = 1.0;
+        // Fire at cutoff-dependent level: low cutoff = more closed LPG = darker pluck
+        // This ensures base_cutoff actually shapes the tone, not just the tail.
+        let fire_level = 0.4 + p.cutoff_norm * 0.6; // 0.4..1.0
+        self.vactrol.fire_at(fire_level);
+        self.gate   = 0.0;    // gate stays off; vactrol decays from fire_level
         self.active = true;
     }
 
@@ -91,8 +94,8 @@ impl BuchlaVoice {
             let mod_freq = self.freq * self.mod_ratio;
             let mod_out  = self.osc_mod.next(mod_freq, Waveform::Saw);
 
-            // FM: shift principal frequency by mod osc output
-            let fm_hz          = p.fm_depth * p.fm_index * self.freq;
+            // FM: deviation scales with carrier freq; fm_index only sets mod ratio (above)
+            let fm_hz          = p.fm_depth * self.freq;
             let principal_freq = (self.freq + mod_out * fm_hz).max(20.0);
 
             // Principal oscillator

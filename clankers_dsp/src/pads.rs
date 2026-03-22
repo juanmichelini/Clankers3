@@ -125,7 +125,7 @@ impl PadsVoice {
             let mixed = saw + tri;
 
             let filtered = self.filter.process(mixed, p.cutoff_hz, p.resonance, 1.0);
-            let dry = filtered * amp * 0.5;
+            let dry = filtered * amp * 0.8;
 
             // Chorus → stereo spread
             let (cl, cr) = self.chorus.process(dry, dry, p.chorus_rate, p.chorus_depth, p.chorus_mix);

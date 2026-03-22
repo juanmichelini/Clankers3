@@ -28,9 +28,11 @@ impl Lpg {
     /// base_cutoff : normalised base cutoff 0..1 (from CC74)
     /// resonance   : 0..1
     pub fn process(&mut self, x: f32, cv: f32, base_cutoff: f32, resonance: f32) -> f32 {
-        // Cutoff: CV opens the filter from base_cutoff toward 1.0
-        let cutoff_norm = (base_cutoff + cv * (1.0 - base_cutoff)).clamp(0.0, 0.999);
-        let cutoff_hz   = 20.0 * 20000.0_f32.powf(cutoff_norm); // 20 Hz–20 kHz
+        // Cutoff: CV opens the filter up to base_cutoff ceiling
+        // Low base_cutoff = darker sound even when CV is high
+        let cutoff_norm = (cv * base_cutoff).clamp(0.0, 0.999);
+        // Cap at sr*0.45 to prevent tan() blow-up near Nyquist
+        let cutoff_hz   = (20.0 * 20000.0_f32.powf(cutoff_norm)).min(self.sr * 0.45);
 
         // Damping — light resonance, matches Buchla 292 hardware character
         let resonance  = resonance.clamp(0.0, 0.85);

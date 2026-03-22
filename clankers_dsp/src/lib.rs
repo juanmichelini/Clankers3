@@ -44,19 +44,21 @@ impl ClankersDrums {
     }
 
     /// Trigger a hit and immediately render its full tail.
+    /// Uses an isolated voice — no shared engine state contamination.
     pub fn trigger_render(&mut self, voice_id: u8, velocity: f32, p0: f32, p1: f32, p2: f32) -> Float32Array {
-        self.engine.trigger(voice_id, velocity, p0, p1, p2);
-
-        let max = 44100 * 3;
-        let mut buf = vec![0.0f32; max];
-        self.engine.process(&mut buf);
-
-        let end = buf.iter()
-            .rposition(|&s| s.abs() > 1e-5)
-            .map(|i| i + 1)
-            .unwrap_or(512);
-
-        Float32Array::from(&buf[..end])
+        let vel = velocity.clamp(0.0, 1.0);
+        let rng = &mut self.engine.rng;
+        let voice = match voice_id {
+            0 => drums::synth_kick(vel, p0, p1, p2, rng),
+            1 => drums::synth_snare(vel, p0, p1, p2, rng),
+            2 => drums::synth_hihat(vel, false, p0, p1, p2, rng),
+            3 => drums::synth_hihat(vel, true,  p0, p1, p2, rng),
+            4 => drums::synth_tom(vel, 41, p0, p1),
+            5 => drums::synth_tom(vel, 43, p0, p1),
+            6 => drums::synth_tom(vel, 45, p0, p1),
+            _ => return Float32Array::new_with_length(0),
+        };
+        Float32Array::from(voice.into_buf().as_slice())
     }
 }
 
@@ -86,9 +88,10 @@ impl ClankersBass {
     }
 
     /// Trigger a note. cc_json: '{"74":80,"71":60}' or '{}'.
-    pub fn trigger(&mut self, midi_note: u8, velocity: f32, cc_json: &str) {
+    /// hold_samples: note-on duration in samples (0 = use amp envelope only)
+    pub fn trigger(&mut self, midi_note: u8, velocity: f32, hold_samples: u32, cc_json: &str) {
         let p = parse_bass_params(cc_json);
-        self.engine.trigger(midi_note, velocity, &p);
+        self.engine.trigger(midi_note, velocity, hold_samples as usize, &p);
     }
 
     /// Render n_samples of audio (adds all active voices). Returns Float32Array.
@@ -102,12 +105,15 @@ impl ClankersBass {
     }
 
     /// Trigger + render full tail — isolated single voice, no shared state.
-    pub fn trigger_render(&mut self, midi_note: u8, velocity: f32, cc_json: &str) -> Float32Array {
+    /// Note: ClankerBoy uses MIDI 0-23 for bass roots. We transpose +24 semitones
+    /// so the actual synthesis sits in the audible 50-200 Hz range.
+    pub fn trigger_render(&mut self, midi_note: u8, velocity: f32, hold_samples: u32, cc_json: &str) -> Float32Array {
         let p = parse_bass_params(cc_json);
 
         // Fresh voice each call — prevents cross-contamination when chords render
         let mut voice = bass::BassVoice::new(0xba55);
-        voice.trigger(midi_note, velocity, &p);
+        let transposed = midi_note.saturating_add(48); // +4 octaves into audible range
+        voice.trigger(transposed, velocity, hold_samples as usize, &p);
 
         let max = 44100 * 4;
         let mut buf = vec![0.0f32; max];
@@ -270,7 +276,7 @@ fn parse_buchla_params(cc_json: &str) -> BuchlaParams {
         let n = val / 127.0;
         match key {
             74 => p.cutoff_norm = n,
-            71 => p.resonance   = n * 0.85,
+            71 => p.resonance   = n,          // LPG clamps to 0.85 internally
             20 => p.fold_amount = n,
             17 => p.fm_depth    = n,
             18 => p.fm_index    = n,

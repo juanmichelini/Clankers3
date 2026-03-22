@@ -48,6 +48,20 @@ impl Vactrol {
         smoothstep(self.state)
     }
 
+    /// Instantly set vactrol to full open — bypass the one-pole attack.
+    /// Use this on trigger so the LPG fires immediately instead of
+    /// ramping from 0 over many samples.
+    pub fn fire(&mut self) {
+        self.state       = 1.0;
+        self.droop_state = 0.0;
+    }
+
+    /// Fire at a specific level (0..1) — allows cutoff to shape the initial tone.
+    pub fn fire_at(&mut self, level: f32) {
+        self.state       = level.clamp(0.0, 1.0);
+        self.droop_state = 0.0;
+    }
+
     pub fn reset(&mut self) {
         self.state       = 0.0;
         self.droop_state = 0.0;

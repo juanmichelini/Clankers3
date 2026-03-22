@@ -22,6 +22,9 @@ use crate::tpt_ladder::TptLadder;
 
 const SR: f32 = 44100.0;
 
+/// One-pole smoothing coefficient — 5 ms ramp, kills zipper noise on knob moves
+const SMOOTH: f32 = 1.0 - 0.99547; // 1 - exp(-1 / (44100 * 0.005))
+
 /// Params passed per-note trigger (derived from ClankerBoy track CCs)
 #[derive(Clone, Copy)]
 pub struct BassParams {
@@ -45,7 +48,7 @@ impl Default for BassParams {
             resonance:      0.30,
             amp_attack:     0.002,
             amp_decay:      0.4,
-            amp_sustain:    0.7,
+            amp_sustain:    0.0,
             amp_release:    0.12,
             flt_env_amount: 0.35,
             flt_decay:      0.18,
@@ -65,10 +68,13 @@ pub struct BassVoice {
     flt_env:  Envelope,
     rng:      Rng,
 
-    current_freq: f32,
-    target_freq:  f32,
-    glide_coeff:  f32,
-    active:       bool,
+    current_freq:   f32,
+    target_freq:    f32,
+    glide_coeff:    f32,
+    smooth_cutoff:  f32,    // smoothed cutoff_norm (kills zipper noise)
+    smooth_res:     f32,    // smoothed resonance
+    hold_remaining: usize,  // samples until auto-release (usize::MAX = hold forever)
+    active:         bool,
 }
 
 impl BassVoice {
@@ -81,14 +87,17 @@ impl BassVoice {
             amp_env:  Envelope::new(SR),
             flt_env:  Envelope::new(SR),
             rng:      Rng::new(seed),
-            current_freq: 110.0,
-            target_freq:  110.0,
-            glide_coeff:  1.0,
-            active:       false,
+            current_freq:   110.0,
+            target_freq:    110.0,
+            glide_coeff:    1.0,
+            smooth_cutoff:  0.45,
+            smooth_res:     0.30,
+            hold_remaining: usize::MAX,
+            active:         false,
         }
     }
 
-    pub fn trigger(&mut self, midi_note: u8, velocity: f32, p: &BassParams) {
+    pub fn trigger(&mut self, midi_note: u8, velocity: f32, hold_samples: usize, p: &BassParams) {
         self.target_freq = midi_to_hz(midi_note);
         if !self.active || p.glide_time < 0.001 {
             self.current_freq = self.target_freq;
@@ -103,6 +112,14 @@ impl BassVoice {
         self.amp_env.note_on();
         self.flt_env.set_adsr(0.001, p.flt_decay, 0.0, p.flt_decay * 0.5);
         self.flt_env.note_on();
+
+        // Snap smoothed params to target so new notes start clean, not from stale state
+        self.smooth_cutoff = p.cutoff_norm;
+        self.smooth_res    = p.resonance;
+        // Reset filter integrators so each note starts without residual self-oscillation
+        self.filter.reset();
+
+        self.hold_remaining = hold_samples;
 
         // Velocity-scale osc levels
         self.osc_a.level = velocity * 0.5;
@@ -135,15 +152,35 @@ impl BassVoice {
 
             let mixed = sa + sb + ss + noise;
 
-            // Filter cutoff: base + filter envelope
+            // Auto-release after hold duration
+            if self.hold_remaining > 0 {
+                self.hold_remaining -= 1;
+                if self.hold_remaining == 0 {
+                    self.amp_env.note_off();
+                    self.flt_env.note_off();
+                }
+            }
+
+            // Smooth cutoff and resonance toward targets — eliminates zipper noise
+            self.smooth_cutoff += SMOOTH * (p.cutoff_norm - self.smooth_cutoff);
+            self.smooth_res    += SMOOTH * (p.resonance   - self.smooth_res);
+
+            // Filter cutoff: smoothed base + filter envelope
             let flt_env_val = self.flt_env.process();
-            let cutoff_norm = (p.cutoff_norm + flt_env_val * p.flt_env_amount).clamp(0.0, 1.0);
+            let cutoff_norm = (self.smooth_cutoff + flt_env_val * p.flt_env_amount).clamp(0.0, 1.0);
             let cutoff_hz   = norm_to_cutoff_hz(cutoff_norm);
 
-            let filtered = self.filter.process(mixed, cutoff_hz, p.resonance, p.drive);
-
             let amp = self.amp_env.process();
-            if amp < 1e-6 && !self.amp_env.is_active() { self.active = false; }
+
+            // Gate resonance with amp so self-oscillation decays with the note
+            // High-res staccato stays punchy without an infinite ring tail
+            let gated_res = self.smooth_res * amp;
+            let filtered = self.filter.process(mixed, cutoff_hz, gated_res, p.drive);
+
+            if amp < 1e-6 && !self.amp_env.is_active() {
+                self.filter.reset();
+                self.active = false;
+            }
 
             *s += filtered * amp * 0.6;
         }
@@ -164,7 +201,7 @@ impl BassEngine {
         BassEngine { voices, next_voice: 0 }
     }
 
-    pub fn trigger(&mut self, midi_note: u8, velocity: f32, p: &BassParams) {
+    pub fn trigger(&mut self, midi_note: u8, velocity: f32, hold_samples: usize, p: &BassParams) {
         // Steal a voice: prefer idle, otherwise oldest (round-robin)
         let idx = (0..self.voices.len())
             .find(|&i| !self.voices[i].is_active())
@@ -173,7 +210,7 @@ impl BassEngine {
                 self.next_voice = (v + 1) % self.voices.len();
                 v
             });
-        self.voices[idx].trigger(midi_note, velocity, p);
+        self.voices[idx].trigger(midi_note, velocity, hold_samples, p);
     }
 
     pub fn process(&mut self, buf: &mut [f32], p: &BassParams) {

@@ -24,12 +24,15 @@ export class ClankersBass {
     render(n_samples: number): Float32Array;
     /**
      * Trigger a note. cc_json: '{"74":80,"71":60}' or '{}'.
+     * hold_samples: note-on duration in samples (0 = use amp envelope only)
      */
-    trigger(midi_note: number, velocity: number, cc_json: string): void;
+    trigger(midi_note: number, velocity: number, hold_samples: number, cc_json: string): void;
     /**
      * Trigger + render full tail — isolated single voice, no shared state.
+     * Note: ClankerBoy uses MIDI 0-23 for bass roots. We transpose +24 semitones
+     * so the actual synthesis sits in the audible 50-200 Hz range.
      */
-    trigger_render(midi_note: number, velocity: number, cc_json: string): Float32Array;
+    trigger_render(midi_note: number, velocity: number, hold_samples: number, cc_json: string): Float32Array;
 }
 
 /**
@@ -65,6 +68,7 @@ export class ClankersDrums {
     constructor(seed: number);
     /**
      * Trigger a hit and immediately render its full tail.
+     * Uses an isolated voice — no shared engine state contamination.
      */
     trigger_render(voice_id: number, velocity: number, p0: number, p1: number, p2: number): Float32Array;
 }
@@ -93,8 +97,8 @@ export interface InitOutput {
     readonly __wbg_clankerspads_free: (a: number, b: number) => void;
     readonly clankersbass_new: (a: number) => number;
     readonly clankersbass_render: (a: number, b: number) => any;
-    readonly clankersbass_trigger: (a: number, b: number, c: number, d: number, e: number) => void;
-    readonly clankersbass_trigger_render: (a: number, b: number, c: number, d: number, e: number) => any;
+    readonly clankersbass_trigger: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
+    readonly clankersbass_trigger_render: (a: number, b: number, c: number, d: number, e: number, f: number) => any;
     readonly clankersbuchla_new: () => number;
     readonly clankersbuchla_trigger_render: (a: number, b: number, c: number, d: number, e: number) => any;
     readonly clankersdrums_new: (a: number) => number;

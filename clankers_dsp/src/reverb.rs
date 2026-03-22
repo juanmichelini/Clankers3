@@ -34,7 +34,7 @@ impl Reverb {
         let feedback = 0.5 + room_size * 0.35;
         let damp     = damp.clamp(0.0, 1.0);
 
-        let input = x * 0.015; // scale to prevent overload
+        let input = x * 0.15; // scale to prevent overload
 
         // 8 parallel comb filters
         let mut out = 0.0f32;
